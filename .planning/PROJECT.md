@@ -25,6 +25,7 @@
 - ✓ Moon Bridge слушает `127.0.0.1:38440` и проксирует запросы в Z.ai upstream — existing
 - ✓ `codex exec` через профиль `zai-glm` отвечает на `glm-5.2 xhigh` — existing
 - ✓ pip-installable пакет `zai-codex-helper` с CLI entrypoint (Python 3.10+, `pyproject.toml` + hatchling, src-layout, dynamic version, console script `zai-codex-helper`) — Validated in Phase 1: Project Skeleton & Packaging Foundation (PKG-01/02). Команды пока stab'ы, реальная логика в последующих фазах.
+- ✓ Инъектируемый frozen `Paths` объект (`Paths.from_home`/`Paths.default`, 7 путей через один injected home) — Validated in Phase 2: Injectable Paths Object (PKG-03). Тесты провалируемо не трогают реальный `$HOME`.
 
 ### Active
 
@@ -110,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-29 after Phase 1 completion — walking skeleton + pytest harness delivered (PKG-01/02/04/05 verified); CLI entrypoint requirement moved to Validated*
+*Last updated: 2026-06-29 after Phase 2 completion — frozen `Paths` dataclass delivered (PKG-03 verified); Paths requirement moved to Validated*
