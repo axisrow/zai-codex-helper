@@ -9,11 +9,11 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Packaging & Foundation
 
-- [ ] **PKG-01**: Пакет `zai-codex-helper` устанавливается через pip (Python 3.10+, `pyproject.toml` + hatchling, src/-layout)
-- [ ] **PKG-02**: CLI entrypoint `zai-codex-helper` доступен после установки как console script
+- [x] **PKG-01**: Пакет `zai-codex-helper` устанавливается через pip (Python 3.10+, `pyproject.toml` + hatchling, src/-layout)
+- [x] **PKG-02**: CLI entrypoint `zai-codex-helper` доступен после установки как console script
 - [ ] **PKG-03**: Инъектируемый объект `Paths` определяет все пути (`~/.codex/*`, `~/.zshrc`, `~/Library/LaunchAgents/`) — тесты не трогают реальный HOME
-- [ ] **PKG-04**: pytest с маркерами tier-ов (unit/integration/smoke/e2e), фикстуры `tmp_path` + `monkeypatch.setenv('HOME')`
-- [ ] **PKG-05**: Читаемые ошибки без traceback (если не `--debug`), корректные exit codes
+- [x] **PKG-04**: pytest с маркерами tier-ов (unit/integration/smoke/e2e), фикстуры `tmp_path` + `monkeypatch.setenv('HOME')`
+- [x] **PKG-05**: Читаемые ошибки без traceback (если не `--debug`), корректные exit codes
 
 ### Config Patching & Safety
 
@@ -115,11 +115,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PKG-01 | Phase 1 | Pending |
-| PKG-02 | Phase 1 | Pending |
+| PKG-01 | Phase 1 | Complete |
+| PKG-02 | Phase 1 | Complete |
 | PKG-03 | Phase 2 | Pending |
-| PKG-04 | Phase 1 | Pending |
-| PKG-05 | Phase 1 | Pending |
+| PKG-04 | Phase 1 | Complete |
+| PKG-05 | Phase 1 | Complete |
 | CONF-01 | Phase 3 | Pending |
 | CONF-02 | Phase 5 | Pending |
 | CONF-03 | Phase 4 | Pending |
@@ -159,6 +159,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-05 | Phase 15 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 42 total
 - Mapped to phases: 42
 - Unmapped: 0 ✓
