@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Injectable Paths Object** - Frozen `Paths` dataclass so tests never touch the real `~/.codex` (completed 2026-06-29)
 - [x] **Phase 3: Atomic Write Helper** - Crash-safe temp + fsync + os.replace writes with `0600` support for secrets (completed 2026-06-29)
 - [x] **Phase 4: Backup Coordinator & ConfigBackend ABC** - Once-per-user sentinel backup + the backend contract every file type implements (completed 2026-06-29)
-- [ ] **Phase 5: TomlBackend (config.toml via tomlkit)** - Lossless round-trip patching of `config.toml` preserving comments, key order, and Codex trust blocks
+- [x] **Phase 5: TomlBackend (config.toml via tomlkit)** - Lossless round-trip patching of `config.toml` preserving comments, key order, and Codex trust blocks (completed 2026-06-29)
 - [ ] **Phase 6: Canonical Templates & Provider Transforms** - Pure desired-state bodies + symmetric `apply_zai`/`apply_openai` transforms (Core Value logic)
 - [ ] **Phase 7: CLI `use zai` / `use openai`** - The product: one command flips Z.ai to default, one flips it back, with Desktop-restart warning
 - [ ] **Phase 8: CLI `status`** - Read-only summary of current default provider, config paths, and package version
@@ -115,9 +115,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. An upsert of a nested `[model_providers.*]` block replaces an existing block rather than appending a duplicate
 
 **Notes**: Research flag LOW — RESOLVED during planning: verified tomlkit `doc["model_providers"]["zai"] = new_table` re-assigns in place (exactly one block, position preserved, top/sibling comments survive). Round-trip byte-identical for surviving keys; comments attached to a *replaced* sub-table are dropped (inherent to replace semantics, documented as known tomlkit normalization per D-35).
-**Plans**: 1/1 plans
+**Plans**: 1/1 plans complete
 
-- [ ] 05-01-PLAN.md — TomlBackend(ConfigBackend): tomlkit read/write/exists + upsert_block replace-not-append helper, pinned by the highest-signal round-trip test (SC-1) and the upsert-replaces-not-appends tests (SC-2)
+- [x] 05-01-PLAN.md — TomlBackend(ConfigBackend): tomlkit read/write/exists + upsert_block replace-not-append helper, pinned by the highest-signal round-trip test (SC-1) and the upsert-replaces-not-appends tests (SC-2)
 
 ### Phase 6: Canonical Templates & Provider Transforms
 
@@ -278,7 +278,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 2. Injectable Paths Object | 1/1 | Complete    | 2026-06-29 |
 | 3. Atomic Write Helper | 1/1 | Complete    | 2026-06-29 |
 | 4. Backup Coordinator & ConfigBackend ABC | 2/2 | Complete    | 2026-06-29 |
-| 5. TomlBackend (config.toml via tomlkit) | 0/1 | Planned | - |
+| 5. TomlBackend (config.toml via tomlkit) | 1/1 | Complete   | 2026-06-29 |
 | 6. Canonical Templates & Provider Transforms | 0/0 | Not started | - |
 | 7. CLI use zai / use openai | 0/0 | Not started | - |
 | 8. CLI status | 0/0 | Not started | - |
