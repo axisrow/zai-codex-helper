@@ -98,7 +98,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A `restore` command rolls the user's config back to the last one-time backup
   3. Every concrete backend implements the `ConfigBackend` ABC (`read`/`exists`/`write_canonical`/`backup_once`), giving all file types a uniform mutation surface
 
-**Plans**: TBD
+**Plans**: 1/2 plans executed
+
+- [x] 04-01-PLAN.md
+- [ ] 04-02-PLAN.md
 
 ### Phase 5: TomlBackend (config.toml via tomlkit)
 
@@ -272,7 +275,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 1. Project Skeleton & Packaging Foundation | 2/2 | Complete    | 2026-06-29 |
 | 2. Injectable Paths Object | 1/1 | Complete    | 2026-06-29 |
 | 3. Atomic Write Helper | 1/1 | Complete    | 2026-06-29 |
-| 4. Backup Coordinator & ConfigBackend ABC | 0/0 | Not started | - |
+| 4. Backup Coordinator & ConfigBackend ABC | 1/2 | In Progress|  |
 | 5. TomlBackend (config.toml via tomlkit) | 0/0 | Not started | - |
 | 6. Canonical Templates & Provider Transforms | 0/0 | Not started | - |
 | 7. CLI use zai / use openai | 0/0 | Not started | - |
