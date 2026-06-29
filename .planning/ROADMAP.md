@@ -47,10 +47,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `pytest` discovers tests marked `unit`/`integration`/`smoke`/`e2e` and a `tmp_path` + `monkeypatch.setenv('HOME')` fixture isolates every test from the real `~/.codex`
   4. A runtime error prints a readable one-line message and a non-zero exit code, with the traceback hidden unless `--debug` is passed
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Walking Skeleton: pyproject.toml (PEP 621 + hatchling + src-layout + dynamic version) + three-layer package (cli/services/backends) + argparse CLI with stub subcommands + main() enforcing the D-11 error contract
+- [x] 01-01-PLAN.md — Walking Skeleton: pyproject.toml (PEP 621 + hatchling + src-layout + dynamic version) + three-layer package (cli/services/backends) + argparse CLI with stub subcommands + main() enforcing the D-11 error contract
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -265,7 +265,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Project Skeleton & Packaging Foundation | 0/0 | Not started | - |
+| 1. Project Skeleton & Packaging Foundation | 1/2 | In Progress|  |
 | 2. Injectable Paths Object | 0/0 | Not started | - |
 | 3. Atomic Write Helper | 0/0 | Not started | - |
 | 4. Backup Coordinator & ConfigBackend ABC | 0/0 | Not started | - |
