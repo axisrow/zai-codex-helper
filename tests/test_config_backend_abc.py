@@ -117,12 +117,19 @@ def test_full_subclass_instantiates_and_runs(tmp_path):
     assert backend.read() == b"hello"
 
     # backup_once() executes without TypeError (inherited concrete-on-ABC).
-    # No source exists yet at this point → coordinator raises; assert the
-    # raise is ZaiCodexHelperError, NOT a TypeError about abstractmethods.
-    from zai_codex_helper import ZaiCodexHelperError
+    # The source now exists (written above), so the inherited method
+    # performs the full D-30 delegation: it creates the sibling .bak
+    # byte-identical to the live file AND the sentinel. This proves both
+    # that backup_once runs (no abstractmethod TypeError) and that the
+    # D-30 gate is wired end-to-end through the coordinator.
+    from zai_codex_helper.backends._backup import BAK_SUFFIX, SENTINEL_NAME
 
-    with pytest.raises(ZaiCodexHelperError):
-        backend.backup_once()
+    backend.backup_once()
+
+    bak = backend.path.parent / (backend.path.name + BAK_SUFFIX)
+    sentinel = paths.codex_dir / SENTINEL_NAME
+    assert bak.read_bytes() == b"hello"
+    assert sentinel.exists()
 
 
 # --------------------------------------------------------------------------- #
