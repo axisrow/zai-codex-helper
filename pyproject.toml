@@ -1,0 +1,86 @@
+# Source: RESEARCH.md "Code Examples → pyproject.toml" (validated against
+# hatch.pypa.io, docs.astral.sh/ruff, docs.pytest.org/en/stable/how-to/mark.html).
+# Every key below is load-bearing (see PLAN.md Task 1 + RESEARCH Pitfalls 1-6).
+
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zai-codex-helper"
+dynamic = ["version"]
+description = "Manage the Codex ⇄ Moon Bridge ⇄ Z.ai link without hand-editing TOML/YAML/shell."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "axisrow" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+    # D-06: declared now (package ships to PyPI at milestone end); NOT imported in Phase 1.
+    "tomlkit>=0.12,<1",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+zai-codex-helper = "zai_codex_helper.__main__:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-httpserver>=1.1",
+    "build",
+    "hatchling>=1.21",
+    "ruff>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/axisrow/zai-codex-helper"
+
+# --- hatchling: src-layout + dynamic version (D-09, D-16) ---
+[tool.hatch.version]
+path = "src/zai_codex_helper/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zai_codex_helper"]
+
+# --- ruff: linter + formatter (D-08) ---
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# --- pytest: markers + HOME isolation (D-13, D-14) ---
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+markers = [
+    "unit: fast isolated tests (pure logic, mocked IO)",
+    "integration: tests touching tmp HOME + fake services",
+    "smoke: end-to-end install+invoke (pip install . → --help)",
+    "e2e: live codex exec through Z.ai (LOCAL ONLY, never in CI)",
+]
+addopts = [
+    "--strict-markers",
+    "-m", "not e2e",
+]
