@@ -50,7 +50,6 @@ from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.providers import (
     OPENAI_MODEL,
     ZAI_MODEL,
-    ZAI_PROVIDER_ID,
     ZAI_REASONING_EFFORT,
 )
 
@@ -197,7 +196,13 @@ def test_status_prints_every_resolved_path_with_markers_sc1(tmp_path, capsys):
     out = capsys.readouterr().out
     # Every D-50 path field's resolved string appears in output (compare against
     # Paths.default() so the test is robust to HOME changes).
-    for field in ("config_toml", "moonbridge_yml", "models_cache", "zshrc", "launchagents_dir"):
+    for field in (
+        "config_toml",
+        "moonbridge_yml",
+        "models_cache",
+        "zshrc",
+        "launchagents_dir",
+    ):
         assert str(getattr(paths, field)) in out, f"missing path for {field}"
     # config.toml + moonbridge_yml are present -> marked exists.
     assert "[exists]" in out
@@ -401,9 +406,7 @@ class TestStatusReadOnlyGuard:
                 )
             # No bare-name call/reference to write_canonical/backup_once/atomic_write.
             if isinstance(node, ast.Name) and node.id in forbidden_names:
-                pytest.fail(
-                    f"forbidden mutator name {node.id!r} in services/status.py"
-                )
+                pytest.fail(f"forbidden mutator name {node.id!r} in services/status.py")
 
     def test_handle_status_body_has_no_mutator_calls(self):
         """The body of ``_handle_status`` calls/refs no mutator (D-51, load-bearing).
@@ -426,17 +429,12 @@ class TestStatusReadOnlyGuard:
             "backup_once",
             "atomic_write",
         }
-        parser_key = next(
-            k for k in self.trees if k.endswith("cli/parser.py")
-        )
+        parser_key = next(k for k in self.trees if k.endswith("cli/parser.py"))
         tree = self.trees[parser_key]
         # Find the _handle_status function definition.
         handler = None
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.FunctionDef)
-                and node.name == "_handle_status"
-            ):
+            if isinstance(node, ast.FunctionDef) and node.name == "_handle_status":
                 handler = node
                 break
         assert handler is not None, (
@@ -445,13 +443,11 @@ class TestStatusReadOnlyGuard:
         for node in ast.walk(handler):
             if isinstance(node, ast.Attribute) and node.attr in forbidden_attrs:
                 pytest.fail(
-                    f"forbidden mutating attribute {node.attr!r} "
-                    f"in _handle_status body"
+                    f"forbidden mutating attribute {node.attr!r} in _handle_status body"
                 )
             if isinstance(node, ast.Name) and node.id in forbidden_names:
                 pytest.fail(
-                    f"forbidden mutator name {node.id!r} "
-                    f"in _handle_status body"
+                    f"forbidden mutator name {node.id!r} in _handle_status body"
                 )
 
 

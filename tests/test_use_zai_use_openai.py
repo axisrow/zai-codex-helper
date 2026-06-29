@@ -346,7 +346,7 @@ def test_comments_and_trust_block_survive_use_zai(tmp_path):
     assert "# Codex config — managed by zai-codex-helper" in raw
     # The [project_*] trust block header survives.
     assert "[project_2fa0d1e3]" in raw
-    assert "trust_level = \"trusted\"" in raw
+    assert 'trust_level = "trusted"' in raw
     # And the on-disk doc still parses + carries the trust block.
     doc = _read_back(cfg)
     assert doc["project_2fa0d1e3"]["trust_level"] == "trusted"
