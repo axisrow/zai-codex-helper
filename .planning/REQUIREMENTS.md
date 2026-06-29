@@ -19,8 +19,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **CONF-01**: Atomic write для всех мутаций (temp + fsync + os.replace), `0600` для секретов
 - [ ] **CONF-02**: Патч `config.toml` через tomlkit — сохраняет комментарии, порядок ключей и Codex project trust blocks на round-trip
-- [ ] **CONF-03**: Бэкап конфигов один раз на пользователя (sentinel-gated; повторный запуск не дублирует бэкап, если уже есть)
-- [ ] **CONF-04**: `restore` команда — откат к последнему бэкапу
+- [x] **CONF-03**: Бэкап конфигов один раз на пользователя (sentinel-gated; повторный запуск не дублирует бэкап, если уже есть)
+- [x] **CONF-04**: `restore` команда — откат к последнему бэкапу
 - [ ] **CONF-05**: Post-condition проверки после записи (provider resolves, has `base_url`, no reserved id redefined)
 - [ ] **CONF-06**: Идемпотентность — повторный `setup`/`use` даёт byte-идентичный результат (upsert, не append)
 - [ ] **CONF-07**: `--dry-run` / diff preview перед изменением `~/.codex` и `~/.zshrc`
@@ -122,8 +122,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PKG-05 | Phase 1 | Complete |
 | CONF-01 | Phase 3 | Complete |
 | CONF-02 | Phase 5 | Pending |
-| CONF-03 | Phase 4 | Pending |
-| CONF-04 | Phase 4 | Pending |
+| CONF-03 | Phase 4 | Complete |
+| CONF-04 | Phase 4 | Complete |
 | CONF-05 | Phase 6 | Pending |
 | CONF-06 | Phase 7 | Pending |
 | CONF-07 | Phase 15 | Pending |
