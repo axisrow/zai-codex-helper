@@ -167,7 +167,10 @@ Plans:
   1. `status` prints the current default provider, the resolved config file paths, and the package version
   2. `status` provably performs no write to any file and exits 0 on a parseable config (non-zero on a broken one)
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 08-01-PLAN.md — read-only `status` command: provider detection (D-53) + config paths (exists/missing) + version, with byte-identical read-only proof tests (SC-1, SC-2)
 
 ### Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)
 
