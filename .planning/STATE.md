@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 11
-current_phase_name: build-from-source orchestration
+current_phase_name: moon-bridge-install
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-06-29T16:37:34.445Z"
+last_updated: "2026-06-29T16:57:07.764Z"
 last_activity: 2026-06-29
-last_activity_desc: Phase 10 complete, transitioned to Phase 11
+last_activity_desc: Phase 11 execution started
 progress:
   total_phases: 15
   completed_phases: 10
-  total_plans: 15
+  total_plans: 16
   completed_plans: 15
   percent: 67
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** One command (`use zai`) makes Z.ai (`glm-5.2 xhigh`) the default Codex provider, and one command (`use openai`) reverts to OpenAI — without hand-editing TOML/YAML/shell files.
-**Current focus:** Phase 10 — dependency-detection
+**Current focus:** Phase 11 — moon-bridge-install
 
 ## Current Position
 
-Phase: 11 — Moon Bridge Install (build-from-source orchestration)
-Plan: Not started
-Status: Executing Phase 10
-Last activity: 2026-06-29 — Phase 10 complete, transitioned to Phase 11
+Phase: 11 (moon-bridge-install) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 11
+Last activity: 2026-06-29 — Phase 11 execution started
 
 Progress: [░░░░░░░░░░] 0%
 

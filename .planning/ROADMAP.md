@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: CLI `status`** - Read-only summary of current default provider, config paths, and package version (completed 2026-06-29)
 - [x] **Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)** - The disk-touching backends needed by `setup`, `install-service`, and `models_cache` (completed 2026-06-29)
 - [x] **Phase 10: Dependency Detection** - `shutil.which`-based detection of Go / brew / Moon Bridge binary with offer-to-install consent (completed 2026-06-29)
-- [ ] **Phase 11: Moon Bridge Install (build-from-source)** - Go version check → brew bootstrap → pinned-SHA clone → `go build` → `chmod 0755` (HIGHEST research risk)
+- [x] **Phase 11: Moon Bridge Install (build-from-source)** - Go version check → brew bootstrap → pinned-SHA clone → `go build` → `chmod 0755` (HIGHEST research risk) (completed 2026-06-29)
 - [ ] **Phase 12: CLI `setup` (onboarding orchestrator)** - Interactive sequencer over all sub-operations, scriptable with `--yes`/`--no-input`, idempotent
 - [ ] **Phase 13: Service Lifecycle** - `install-service`/`uninstall-service` LaunchAgent pair sharing a plist Label constant
 - [ ] **Phase 14: `doctor` (diagnostic pipeline)** - Ordered chain checks with colored markers and "To fix:" guidance (built last)
@@ -226,11 +226,11 @@ Plans:
   3. The built binary is NOT vendored into the wheel (GPL v3 compliance) — every user builds from source
 
 **Notes**: Research flag HIGH — the #1 research-risk phase. Needs `/gsd-plan-phase --research-phase 11` for Go toolchain detection, commit-SHA pinning strategy, brew bootstrap chain, the `-print-codex-config <model>` integration decision, and GPL v3 implications. Isolated late so it cannot block the Core Value (already shipped in Phase 7). RESOLVED during planning: CONTEXT D-69..D-75 lock the build sequence; pinned SHA = v0.1.0 tag commit (`1cdae19...`), never main; orchestration mock-tested via runner injection; real build is a gated e2e smoke only.
-**Plans**: 1 plan
+**Plans**: 1/1 plans complete
 
 Plans:
 
-- [ ] 11-01-PLAN.md — `build_moonbridge` orchestrator (Go 1.25+ gate → pinned-SHA clone never main → `go build -o ~/.codex/moon-bridge ./cmd/moonbridge` → chmod 0755) + mocked-runner unit tests (SC-1/SC-2/SC-3) + optional gated e2e smoke (DEPS-03, DEPS-04, D-69..D-75)
+- [x] 11-01-PLAN.md — `build_moonbridge` orchestrator (Go 1.25+ gate → pinned-SHA clone never main → `go build -o ~/.codex/moon-bridge ./cmd/moonbridge` → chmod 0755) + mocked-runner unit tests (SC-1/SC-2/SC-3) + optional gated e2e smoke (DEPS-03, DEPS-04, D-69..D-75)
 
 ### Phase 12: CLI `setup` (onboarding orchestrator)
 
@@ -311,7 +311,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 8. CLI status | 1/1 | Complete    | 2026-06-29 |
 | 9. Remaining File Backends | 4/4 | Complete    | 2026-06-29 |
 | 10. Dependency Detection | 1/1 | Complete    | 2026-06-29 |
-| 11. Moon Bridge Install (build-from-source) | 0/1 | In progress | - |
+| 11. Moon Bridge Install (build-from-source) | 1/1 | Complete   | 2026-06-29 |
 | 12. CLI setup (onboarding orchestrator) | 0/0 | Not started | - |
 | 13. Service Lifecycle | 0/0 | Not started | - |
 | 14. doctor (diagnostic pipeline) | 0/0 | Not started | - |
