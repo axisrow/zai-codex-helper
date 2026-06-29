@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Atomic Write Helper** - Crash-safe temp + fsync + os.replace writes with `0600` support for secrets (completed 2026-06-29)
 - [x] **Phase 4: Backup Coordinator & ConfigBackend ABC** - Once-per-user sentinel backup + the backend contract every file type implements (completed 2026-06-29)
 - [x] **Phase 5: TomlBackend (config.toml via tomlkit)** - Lossless round-trip patching of `config.toml` preserving comments, key order, and Codex trust blocks (completed 2026-06-29)
-- [ ] **Phase 6: Canonical Templates & Provider Transforms** - Pure desired-state bodies + symmetric `apply_zai`/`apply_openai` transforms (Core Value logic)
+- [x] **Phase 6: Canonical Templates & Provider Transforms** - Pure desired-state bodies + symmetric `apply_zai`/`apply_openai` transforms (Core Value logic) (completed 2026-06-29)
 - [ ] **Phase 7: CLI `use zai` / `use openai`** - The product: one command flips Z.ai to default, one flips it back, with Desktop-restart warning
 - [ ] **Phase 8: CLI `status`** - Read-only summary of current default provider, config paths, and package version
 - [ ] **Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)** - The disk-touching backends needed by `setup`, `install-service`, and `models_cache`
@@ -131,10 +131,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. `apply_openai(apply_zai(doc))` equals `apply_openai(doc)` — the Z.ai block is preserved on revert, not deleted
   3. A post-condition check confirms the provider resolves, has a `base_url`, and no reserved provider id (`openai`/`ollama`/`lmstudio`) is redefined
 
-**Plans**: 1 plan
+**Plans**: 1/1 plans complete
 
 Plans:
-- [ ] 06-01-PLAN.md — Pure provider transforms + canonical templates (`apply_zai`/`apply_openai`, exact-inverse + idempotent) + `check_postconditions` predicate (SC-1/SC-2/SC-3)
+
+- [x] 06-01-PLAN.md — Pure provider transforms + canonical templates (`apply_zai`/`apply_openai`, exact-inverse + idempotent) + `check_postconditions` predicate (SC-1/SC-2/SC-3)
 
 ### Phase 7: CLI `use zai` / `use openai`
 
@@ -282,7 +283,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 3. Atomic Write Helper | 1/1 | Complete    | 2026-06-29 |
 | 4. Backup Coordinator & ConfigBackend ABC | 2/2 | Complete    | 2026-06-29 |
 | 5. TomlBackend (config.toml via tomlkit) | 1/1 | Complete    | 2026-06-29 |
-| 6. Canonical Templates & Provider Transforms | 0/0 | Not started | - |
+| 6. Canonical Templates & Provider Transforms | 1/1 | Complete   | 2026-06-29 |
 | 7. CLI use zai / use openai | 0/0 | Not started | - |
 | 8. CLI status | 0/0 | Not started | - |
 | 9. Remaining File Backends | 0/0 | Not started | - |
