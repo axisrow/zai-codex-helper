@@ -28,6 +28,7 @@
 - ✓ Инъектируемый frozen `Paths` объект (`Paths.from_home`/`Paths.default`, 7 путей через один injected home) — Validated in Phase 2: Injectable Paths Object (PKG-03). Тесты провалируемо не трогают реальный `$HOME`.
 - ✓ Atomic-write helper (`atomic_write(path, data, mode=None)`: temp+fsync+os.replace, `0600` для секретов) — Validated in Phase 3: Atomic Write Helper (CONF-01). Единственный механизм записи для всех будущих backends.
 - ✓ BackupCoordinator (sentinel-gated one-shot `.bak`) + `ConfigBackend` ABC (read/exists/write_canonical/backup_once) + `restore` CLI (первая реальная команда) — Validated in Phase 4: Backup Coordinator & ConfigBackend ABC (CONF-03/CONF-04). `ZaiCodexHelperError` поднят в `errors.py` (фикс D-11 identity-сплита под `python -m`).
+- ✓ `TomlBackend` (config.toml через tomlkit, lossless round-trip: комментарии + порядок ключей + `[project_*]` trust-блоки выживают) + `upsert_block` (replace-not-append) — Validated in Phase 5: TomlBackend (CONF-02). Load-bearing фаза проекта — byte-identical round-trip доказан. *Tech debt: atomic_write(mode=None) не сохраняет режим (os.replace) — D-DEFERRED-01, для Phase 3/9.*
 
 ### Active
 
