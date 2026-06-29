@@ -29,6 +29,7 @@
 - ✓ Atomic-write helper (`atomic_write(path, data, mode=None)`: temp+fsync+os.replace, `0600` для секретов) — Validated in Phase 3: Atomic Write Helper (CONF-01). Единственный механизм записи для всех будущих backends.
 - ✓ BackupCoordinator (sentinel-gated one-shot `.bak`) + `ConfigBackend` ABC (read/exists/write_canonical/backup_once) + `restore` CLI (первая реальная команда) — Validated in Phase 4: Backup Coordinator & ConfigBackend ABC (CONF-03/CONF-04). `ZaiCodexHelperError` поднят в `errors.py` (фикс D-11 identity-сплита под `python -m`).
 - ✓ `TomlBackend` (config.toml через tomlkit, lossless round-trip: комментарии + порядок ключей + `[project_*]` trust-блоки выживают) + `upsert_block` (replace-not-append) — Validated in Phase 5: TomlBackend (CONF-02). Load-bearing фаза проекта — byte-identical round-trip доказан. *Tech debt: atomic_write(mode=None) не сохраняет режим (os.replace) — D-DEFERRED-01, для Phase 3/9.*
+- ✓ Canonical desired-state transforms `apply_zai`/`apply_openai` (pure, exact-inverse, idempotent; `wire_api="responses"` на `zai-moonbridge`; flat `model_reasoning_effort`) + `check_postconditions` (reserved-id/provider/base_url) — Validated in Phase 6: Canonical Templates & Provider Transforms (PROV-03/CONF-05). Семантическое ядро продукта.
 
 ### Active
 
