@@ -33,6 +33,7 @@
 - ✓ **CORE VALUE ДОСТАВЛЕН** — `zai-codex-helper use zai` делает Z.ai дефолтом (`glm-5.2`/`zai-moonbridge`/`xhigh`/`wire_api=responses`), `use openai` возвращает OpenAI (`gpt-5.5`, Z.ai-блок сохранён). Restart warning на stderr. Идемпотентно (byte-identical). — Validated in Phase 7: CLI use zai / use openai (PROV-01/02/04, CONF-06). Доказано end-to-end через subprocess против throwaway HOME.
 - ✓ `zai-codex-helper status` (read-only: текущий провайдер + 5 config-путей + версия; доказано не мутирует — snapshot byte-identical до/после; missing≠broken) — Validated in Phase 8: CLI status (PROV-05).
 - ✓ 4 оставшихся file-backend'а за `ConfigBackend` ABC: `YamlBackend` (moonbridge-zai.yml @`0600`), `ShellBackend` (.zshrc marker-fence, idempotent), `JsonBackend` (models_cache.json deep-merge), `PlistBackend` (LaunchAgent plist, абсолютный путь без `~`) — Validated in Phase 9: Remaining File Backends (SECR-02/SEC-01). 183 теста. *F841 ruff-gap найден verifier'ом и исправлен (64ed0fb).*
+- ✓ Dependency detection (`detect_go`/`detect_brew`/`detect_moonbridge_binary` → `DepResult`; brew arch `/opt/homebrew` vs `/usr/local` runtime resolution; `offer_install` never-auto-install + platform gate) — Validated in Phase 10: Dependency Detection (DEPS-01/02). 210 тестов.
 
 ### Active
 
