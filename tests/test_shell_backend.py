@@ -130,19 +130,8 @@ def test_shell_preserves_outside_content(tmp_path):
     backend.write_canonical(BODY)
 
     result = zshrc.read_text(encoding="utf-8")
-    # Every user line appears verbatim, in original relative order, before the
-    # fence (appended at the end). We reconstruct the user content from the
-    # result by stripping the fenced section and confirm equality.
-    fence_start = result.index(MARKER_START)
-    head = result[:fence_start]
-    # The head may carry a trailing separator newline added by write_canonical;
-    # trim exactly one trailing newline the writer adds before the fence.
-    if head.endswith("\n") and not user_content.endswith("\n" + head.rstrip("\n")[-1:]):
-        head_compare = head[:-1] if head.endswith("\n") else head
-    else:
-        head_compare = head
-    # User content is a prefix (modulo the single separator newline the writer
-    # may insert). Assert each user line is present in order.
+    # Every user line appears verbatim, in original relative order. The fenced
+    # block is appended at the end; assert each user line survives unchanged.
     for line in user_content.splitlines():
         assert line in result, f"user line missing/modified: {line!r}"
 
