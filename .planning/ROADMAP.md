@@ -67,7 +67,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. `Paths.from_home(home)` resolves `config.toml`, `moonbridge-zai.yml`, `models_cache.json`, `.zshrc`, `LaunchAgents/` dir, and a backup dir under one injected `home`
   2. A unit test using `Paths.from_home(tmp_path)` round-trips all resolved paths and provably never touches the real `$HOME`
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+- [ ] 02-01-PLAN.md — Frozen Paths dataclass (7 fields, pure from_home, thin default) + 6 unit tests proving SC-1 (round-trip) and SC-2 (purity + real $HOME untouched)
 
 ### Phase 3: Atomic Write Helper
 
@@ -266,7 +268,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Project Skeleton & Packaging Foundation | 2/2 | Complete    | 2026-06-29 |
-| 2. Injectable Paths Object | 0/0 | Not started | - |
+| 2. Injectable Paths Object | 0/1 | Planned | - |
 | 3. Atomic Write Helper | 0/0 | Not started | - |
 | 4. Backup Coordinator & ConfigBackend ABC | 0/0 | Not started | - |
 | 5. TomlBackend (config.toml via tomlkit) | 0/0 | Not started | - |
