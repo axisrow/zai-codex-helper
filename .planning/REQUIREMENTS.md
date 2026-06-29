@@ -55,8 +55,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Dependency Detection & Moon Bridge Install
 
-- [ ] **DEPS-01**: Detection Go / brew / Moon Bridge binary через `shutil.which` (runtime resolution Apple Silicon `/opt/homebrew/bin` vs `/usr/local/bin`)
-- [ ] **DEPS-02**: Offer-to-install Go/brew с явным согласием (never auto-install system toolchains)
+- [x] **DEPS-01**: Detection Go / brew / Moon Bridge binary через `shutil.which` (runtime resolution Apple Silicon `/opt/homebrew/bin` vs `/usr/local/bin`)
+- [x] **DEPS-02**: Offer-to-install Go/brew с явным согласием (never auto-install system toolchains)
 - [ ] **DEPS-03**: `setup` ставит Moon Bridge build-from-source: Go 1.25+ check → brew bootstrap suggestion → `git clone` pinned commit SHA → `go build -o ~/.codex/moon-bridge ./cmd/moonbridge` → `chmod 0755`
 - [ ] **DEPS-04**: Moon Bridge pinned к known-good commit SHA (НЕ `main` — релизов нет); binary НЕ вендорится в wheel (GPL v3)
 
@@ -143,8 +143,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SERV-02 | Phase 13 | Pending |
 | SERV-03 | Phase 13 | Pending |
 | SERV-04 | Phase 13 | Pending |
-| DEPS-01 | Phase 10 | Pending |
-| DEPS-02 | Phase 10 | Pending |
+| DEPS-01 | Phase 10 | Complete |
+| DEPS-02 | Phase 10 | Complete |
 | DEPS-03 | Phase 11 | Pending |
 | DEPS-04 | Phase 11 | Pending |
 | SETUP-01 | Phase 12 | Pending |
