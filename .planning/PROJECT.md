@@ -24,12 +24,12 @@
 - ✓ Связка Codex CLI ⇄ Moon Bridge ⇄ Z.ai работает вручную — existing (CLI only)
 - ✓ Moon Bridge слушает `127.0.0.1:38440` и проксирует запросы в Z.ai upstream — existing
 - ✓ `codex exec` через профиль `zai-glm` отвечает на `glm-5.2 xhigh` — existing
+- ✓ pip-installable пакет `zai-codex-helper` с CLI entrypoint (Python 3.10+, `pyproject.toml` + hatchling, src-layout, dynamic version, console script `zai-codex-helper`) — Validated in Phase 1: Project Skeleton & Packaging Foundation (PKG-01/02). Команды пока stab'ы, реальная логика в последующих фазах.
 
 ### Active
 
 <!-- Текущий скоуп v1. Гипотезы до публикации и валидации. -->
 
-- [ ] pip-installable пакет `zai-codex-helper` с CLI entrypoint (Python 3.10+, `pyproject.toml` + hatchling)
 - [ ] Команды: `setup`, `use zai`, `use openai`, `status`, `doctor`, `install-service`, `uninstall-service`
 - [ ] `setup` — интерактивный онбординг (default provider, shell helpers, LaunchAgent, установка/настройка Moon Bridge)
 - [ ] `use zai` выставляет Z.ai дефолтом в `~/.codex/config.toml` (`glm-5.2`, `zai-moonbridge`, `xhigh`)
@@ -110,4 +110,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-29 after Phase 1 context — CLI stack overridden to argparse/no-Rich/ruff (see Key Decisions)*
+*Last updated: 2026-06-29 after Phase 1 completion — walking skeleton + pytest harness delivered (PKG-01/02/04/05 verified); CLI entrypoint requirement moved to Validated*
