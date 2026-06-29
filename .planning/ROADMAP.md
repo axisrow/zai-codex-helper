@@ -43,7 +43,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. `python -c "import zai_codex_helper"` works on Python 3.10 through 3.13 (src/ layout forces install-before-import)
   3. `pytest` discovers tests marked `unit`/`integration`/`smoke`/`e2e` and a `tmp_path` + `monkeypatch.setenv('HOME')` fixture isolates every test from the real `~/.codex`
   4. A runtime error prints a readable one-line message and a non-zero exit code, with the traceback hidden unless `--debug` is passed
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 01-01-PLAN.md — Walking Skeleton: pyproject.toml (PEP 621 + hatchling + src-layout + dynamic version) + three-layer package (cli/services/backends) + argparse CLI with stub subcommands + main() enforcing the D-11 error contract
+- [ ] 01-02-PLAN.md — pytest harness proving PKG-01/02/04/05: autouse HOME-isolation fixture (D-14), tier markers (D-13), smoke tests (install + --help), and the D-11/PKG-05 error-contract test
 
 ### Phase 2: Injectable Paths Object
 **Goal**: Every path the tool touches resolves from a single injectable frozen object, so no test (and no production call) ever hard-codes or corrupts the developer's real `~/.codex`, `~/.zshrc`, or `~/Library/LaunchAgents/`.
