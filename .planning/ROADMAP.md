@@ -16,7 +16,7 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Project Skeleton & Packaging Foundation** - Importable package, console-script entry point, pytest harness with tier markers and tmp-HOME fixtures
+- [x] **Phase 1: Project Skeleton & Packaging Foundation** - Importable package, console-script entry point, pytest harness with tier markers and tmp-HOME fixtures (completed 2026-06-29)
 - [ ] **Phase 2: Injectable Paths Object** - Frozen `Paths` dataclass so tests never touch the real `~/.codex`
 - [ ] **Phase 3: Atomic Write Helper** - Crash-safe temp + fsync + os.replace writes with `0600` support for secrets
 - [ ] **Phase 4: Backup Coordinator & ConfigBackend ABC** - Once-per-user sentinel backup + the backend contract every file type implements
@@ -47,14 +47,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `pytest` discovers tests marked `unit`/`integration`/`smoke`/`e2e` and a `tmp_path` + `monkeypatch.setenv('HOME')` fixture isolates every test from the real `~/.codex`
   4. A runtime error prints a readable one-line message and a non-zero exit code, with the traceback hidden unless `--debug` is passed
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 **Wave 1**
 
 - [x] 01-01-PLAN.md — Walking Skeleton: pyproject.toml (PEP 621 + hatchling + src-layout + dynamic version) + three-layer package (cli/services/backends) + argparse CLI with stub subcommands + main() enforcing the D-11 error contract
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — pytest harness proving PKG-01/02/04/05: autouse HOME-isolation fixture (D-14), tier markers (D-13), smoke tests (install + --help), and the D-11/PKG-05 error-contract test
+- [x] 01-02-PLAN.md — pytest harness proving PKG-01/02/04/05: autouse HOME-isolation fixture (D-14), tier markers (D-13), smoke tests (install + --help), and the D-11/PKG-05 error-contract test
 
 ### Phase 2: Injectable Paths Object
 
@@ -265,7 +265,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Project Skeleton & Packaging Foundation | 1/2 | In Progress|  |
+| 1. Project Skeleton & Packaging Foundation | 2/2 | Complete   | 2026-06-29 |
 | 2. Injectable Paths Object | 0/0 | Not started | - |
 | 3. Atomic Write Helper | 0/0 | Not started | - |
 | 4. Backup Coordinator & ConfigBackend ABC | 0/0 | Not started | - |
