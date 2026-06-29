@@ -60,6 +60,7 @@
 - **Зависимость от Go:** если Moon Bridge требует сборки — проверяем Go на машине пользователя. Нет Go → предлагаем `brew install go`; нет brew → предлагаем установить brew. Если найден готовый бинарник — Go не нужен.
 - **Тестирование:** TDD. Слои — unit (патч TOML/YAML, идемпотентность, бэкап — tmp/mocks), integration (запись во временный `HOME`, `doctor` против фейк-сервиса Moon Bridge), smoke (полный `setup → doctor` без вызова модели), e2e (живой `codex exec` через Z.ai, локально).
 - **Docker:** используется только для воспроизводимого прогона тестов; для финального пользователя не требуется, не является опцией пакета и не входит в зависимости.
+- **CLI-стек (Phase 1):** `argparse` (stdlib) вместо Typer; без Rich (plain text); ruff как линтер+форматтер. См. Key Decisions и `01-CONTEXT.md`. Подробный prescriptive-stack в `.claude/CLAUDE.md` обновлён соответственно.
 
 ## Constraints
 
@@ -81,6 +82,13 @@
 | `setup` = перезапись по шаблону, не мерж | «Обнаружить и синхронизировать» неосмысленно для того, чего ещё нет; простейший честный вариант — привести к каноничному виду | — Pending |
 | Бэкап один раз на пользователя (не на каждое изменение) | Страховка пользовательских настроек; исходный пункт issue («перед каждым изменением») устарел | — Pending |
 | hatchling + `pyproject.toml` | Современный стандарт упаковки; доверенный автору выбор | — Pending |
+| **CLI на `argparse` (stdlib), НЕ Typer** | Пользователь постановил, что Typer избыточен; предпочтение нулевых/минимальных зависимостей. Переопределяет изначально предложенный Typer | Decided (Phase 1 CONTEXT D-01) |
+| **Без Rich — plain text** | Раз Typer убран, Rich больше не приходит транзитивно; цветные маркеры `doctor` (DIAG-04) через ANSI-коды вручную. Переопределяет изначально предложенный Rich | Decided (Phase 1 CONTEXT D-04) |
+| **ruff (линтер+форматтер в одном)** | Заменяет black+flake8+isort одним инструментом; один dev-dep вместо трёх | Decided (Phase 1 CONTEXT D-08) |
+| **Динамическая версия через hatch.version** | Единый источник правды: `__version__` в `__init__.py` читается и кодом (`status`/PROV-05), и метаданными пакета | Decided (Phase 1 CONTEXT D-16) |
+| **CI отложен до Phase 15** | Phase 1 доставляет только локальный pytest-harness; полный CI-matrix (Python 3.10–3.13) — Phase 15 (TEST-05) | Decided (Phase 1 CONTEXT D-20) |
+| **Soft macOS-only classifiers** | Classifier сигнализирует macOS, но без hard platform-block (Linux нужен для Docker-тестов и будущего CI) | Decided (Phase 1 CONTEXT D-18) |
+| **Three-layer каркас закладывается в Phase 1** | Пустые пакеты `cli/` `services/` `backends/` с docstring; архитектурный контракт фиксируется заранее | Decided (Phase 1 CONTEXT D-09) |
 | TDD + 4 слоя тестов; e2e вне CI | Покрытие без хрупких живых вызовов в публичном CI | — Pending |
 | Docker только для тестов, не для пользователя | Воспроизводимость тестов; нулевая нагрузка на финального пользователя | — Pending |
 
@@ -102,4 +110,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-29 after initialization*
+*Last updated: 2026-06-29 after Phase 1 context — CLI stack overridden to argparse/no-Rich/ruff (see Key Decisions)*
