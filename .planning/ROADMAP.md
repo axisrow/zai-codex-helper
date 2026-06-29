@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Project Skeleton & Packaging Foundation** - Importable package, console-script entry point, pytest harness with tier markers and tmp-HOME fixtures (completed 2026-06-29)
 - [x] **Phase 2: Injectable Paths Object** - Frozen `Paths` dataclass so tests never touch the real `~/.codex` (completed 2026-06-29)
 - [x] **Phase 3: Atomic Write Helper** - Crash-safe temp + fsync + os.replace writes with `0600` support for secrets (completed 2026-06-29)
-- [ ] **Phase 4: Backup Coordinator & ConfigBackend ABC** - Once-per-user sentinel backup + the backend contract every file type implements
+- [x] **Phase 4: Backup Coordinator & ConfigBackend ABC** - Once-per-user sentinel backup + the backend contract every file type implements (completed 2026-06-29)
 - [ ] **Phase 5: TomlBackend (config.toml via tomlkit)** - Lossless round-trip patching of `config.toml` preserving comments, key order, and Codex trust blocks
 - [ ] **Phase 6: Canonical Templates & Provider Transforms** - Pure desired-state bodies + symmetric `apply_zai`/`apply_openai` transforms (Core Value logic)
 - [ ] **Phase 7: CLI `use zai` / `use openai`** - The product: one command flips Z.ai to default, one flips it back, with Desktop-restart warning
@@ -98,10 +98,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A `restore` command rolls the user's config back to the last one-time backup
   3. Every concrete backend implements the `ConfigBackend` ABC (`read`/`exists`/`write_canonical`/`backup_once`), giving all file types a uniform mutation surface
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 
 - [x] 04-01-PLAN.md
-- [ ] 04-02-PLAN.md
+- [x] 04-02-PLAN.md
 
 ### Phase 5: TomlBackend (config.toml via tomlkit)
 
@@ -275,7 +275,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 1. Project Skeleton & Packaging Foundation | 2/2 | Complete    | 2026-06-29 |
 | 2. Injectable Paths Object | 1/1 | Complete    | 2026-06-29 |
 | 3. Atomic Write Helper | 1/1 | Complete    | 2026-06-29 |
-| 4. Backup Coordinator & ConfigBackend ABC | 1/2 | In Progress|  |
+| 4. Backup Coordinator & ConfigBackend ABC | 2/2 | Complete   | 2026-06-29 |
 | 5. TomlBackend (config.toml via tomlkit) | 0/0 | Not started | - |
 | 6. Canonical Templates & Provider Transforms | 0/0 | Not started | - |
 | 7. CLI use zai / use openai | 0/0 | Not started | - |
