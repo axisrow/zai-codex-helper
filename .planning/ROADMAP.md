@@ -114,8 +114,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Patching `config.toml` via tomlkit preserves comments, key order, and any `[project_*]` trust block through a no-op load → dump cycle
   2. An upsert of a nested `[model_providers.*]` block replaces an existing block rather than appending a duplicate
 
-**Notes**: Research flag LOW — confirm exact tomlkit API for setting nested `[model_providers.*]` keys with comment preservation. Already HIGH confidence; likely skip deep `/gsd-plan-phase --research-phase`.
-**Plans**: TBD
+**Notes**: Research flag LOW — RESOLVED during planning: verified tomlkit `doc["model_providers"]["zai"] = new_table` re-assigns in place (exactly one block, position preserved, top/sibling comments survive). Round-trip byte-identical for surviving keys; comments attached to a *replaced* sub-table are dropped (inherent to replace semantics, documented as known tomlkit normalization per D-35).
+**Plans**: 1/1 plans
+
+- [ ] 05-01-PLAN.md — TomlBackend(ConfigBackend): tomlkit read/write/exists + upsert_block replace-not-append helper, pinned by the highest-signal round-trip test (SC-1) and the upsert-replaces-not-appends tests (SC-2)
 
 ### Phase 6: Canonical Templates & Provider Transforms
 
@@ -276,7 +278,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 2. Injectable Paths Object | 1/1 | Complete    | 2026-06-29 |
 | 3. Atomic Write Helper | 1/1 | Complete    | 2026-06-29 |
 | 4. Backup Coordinator & ConfigBackend ABC | 2/2 | Complete    | 2026-06-29 |
-| 5. TomlBackend (config.toml via tomlkit) | 0/0 | Not started | - |
+| 5. TomlBackend (config.toml via tomlkit) | 0/1 | Planned | - |
 | 6. Canonical Templates & Provider Transforms | 0/0 | Not started | - |
 | 7. CLI use zai / use openai | 0/0 | Not started | - |
 | 8. CLI status | 0/0 | Not started | - |
