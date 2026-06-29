@@ -306,7 +306,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 7. CLI use zai / use openai | 1/1 | Complete    | 2026-06-29 |
 | 8. CLI status | 1/1 | Complete    | 2026-06-29 |
 | 9. Remaining File Backends | 4/4 | Complete    | 2026-06-29 |
-| 10. Dependency Detection | 0/0 | Not started | - |
+| 10. Dependency Detection | 1/1 | Planned | - |
 | 11. Moon Bridge Install (build-from-source) | 0/0 | Not started | - |
 | 12. CLI setup (onboarding orchestrator) | 0/0 | Not started | - |
 | 13. Service Lifecycle | 0/0 | Not started | - |
