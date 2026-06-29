@@ -23,7 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: TomlBackend (config.toml via tomlkit)** - Lossless round-trip patching of `config.toml` preserving comments, key order, and Codex trust blocks (completed 2026-06-29)
 - [x] **Phase 6: Canonical Templates & Provider Transforms** - Pure desired-state bodies + symmetric `apply_zai`/`apply_openai` transforms (Core Value logic) (completed 2026-06-29)
 - [x] **Phase 7: CLI `use zai` / `use openai`** - The product: one command flips Z.ai to default, one flips it back, with Desktop-restart warning (completed 2026-06-29)
-- [ ] **Phase 8: CLI `status`** - Read-only summary of current default provider, config paths, and package version
+- [x] **Phase 8: CLI `status`** - Read-only summary of current default provider, config paths, and package version (completed 2026-06-29)
 - [ ] **Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)** - The disk-touching backends needed by `setup`, `install-service`, and `models_cache`
 - [ ] **Phase 10: Dependency Detection** - `shutil.which`-based detection of Go / brew / Moon Bridge binary with offer-to-install consent
 - [ ] **Phase 11: Moon Bridge Install (build-from-source)** - Go version check → brew bootstrap → pinned-SHA clone → `go build` → `chmod 0755` (HIGHEST research risk)
@@ -167,10 +167,11 @@ Plans:
   1. `status` prints the current default provider, the resolved config file paths, and the package version
   2. `status` provably performs no write to any file and exits 0 on a parseable config (non-zero on a broken one)
 
-**Plans**: 1 plan
+**Plans**: 1/1 plans complete
 
 Plans:
-- [ ] 08-01-PLAN.md — read-only `status` command: provider detection (D-53) + config paths (exists/missing) + version, with byte-identical read-only proof tests (SC-1, SC-2)
+
+- [x] 08-01-PLAN.md — read-only `status` command: provider detection (D-53) + config paths (exists/missing) + version, with byte-identical read-only proof tests (SC-1, SC-2)
 
 ### Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)
 
@@ -292,7 +293,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 5. TomlBackend (config.toml via tomlkit) | 1/1 | Complete    | 2026-06-29 |
 | 6. Canonical Templates & Provider Transforms | 1/1 | Complete    | 2026-06-29 |
 | 7. CLI use zai / use openai | 1/1 | Complete    | 2026-06-29 |
-| 8. CLI status | 0/0 | Not started | - |
+| 8. CLI status | 1/1 | Complete   | 2026-06-29 |
 | 9. Remaining File Backends | 0/0 | Not started | - |
 | 10. Dependency Detection | 0/0 | Not started | - |
 | 11. Moon Bridge Install (build-from-source) | 0/0 | Not started | - |

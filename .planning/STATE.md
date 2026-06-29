@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 8
-current_phase_name: CLI `status`
+current_phase: 08
+current_phase_name: cli-status
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-06-29T13:58:32.964Z"
+last_updated: "2026-06-29T13:59:14.771Z"
 last_activity: 2026-06-29
-last_activity_desc: Phase 07 complete, transitioned to Phase 8
+last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 15
   completed_phases: 7
-  total_plans: 9
+  total_plans: 10
   completed_plans: 9
   percent: 47
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** One command (`use zai`) makes Z.ai (`glm-5.2 xhigh`) the default Codex provider, and one command (`use openai`) reverts to OpenAI — without hand-editing TOML/YAML/shell files.
-**Current focus:** Phase 07 — use-zai-use-openai
+**Current focus:** Phase 08 — cli-status
 
 ## Current Position
 
-Phase: 8 — CLI `status`
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-29 — Phase 07 complete, transitioned to Phase 8
+Phase: 08 (cli-status) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 08
+Last activity: 2026-06-29 — Phase 08 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
