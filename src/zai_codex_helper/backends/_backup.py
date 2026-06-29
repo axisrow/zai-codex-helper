@@ -31,8 +31,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zai_codex_helper.__main__ import ZaiCodexHelperError
 from zai_codex_helper.backends._atomic import atomic_write
+from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.paths import Paths
 
 __all__ = ["BackupCoordinator", "SENTINEL_NAME", "BAK_SUFFIX"]

@@ -10,17 +10,9 @@ unless ``--debug`` is passed. Unhandled exceptions (real bugs) are not caught
 import sys
 
 from zai_codex_helper.cli.parser import build_parser
+from zai_codex_helper.errors import ZaiCodexHelperError
 
-
-class ZaiCodexHelperError(Exception):
-    """Expected helper error → one-line message + non-zero exit, no traceback.
-
-    Raised by services/backends layers when an anticipated failure occurs
-    (file not found, TOML invalid, provider unresolvable, key missing).
-    Caught once in :func:`main`. The D-11 contract: print ``error: <msg>``
-    to stderr and exit non-zero; under ``--debug`` re-raise so Python emits
-    the full traceback for debugging.
-    """
+__all__ = ["main", "ZaiCodexHelperError"]
 
 
 def main(argv: list[str] | None = None) -> int:
