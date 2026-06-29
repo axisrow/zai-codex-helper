@@ -225,8 +225,12 @@ Plans:
   2. The tool clones the Moon Bridge repo at a pinned known-good commit SHA (never `main`) and runs `go build -o ~/.codex/moon-bridge ./cmd/moonbridge` producing a `0755` executable
   3. The built binary is NOT vendored into the wheel (GPL v3 compliance) — every user builds from source
 
-**Notes**: Research flag HIGH — the #1 research-risk phase. Needs `/gsd-plan-phase --research-phase 11` for Go toolchain detection, commit-SHA pinning strategy, brew bootstrap chain, the `-print-codex-config <model>` integration decision, and GPL v3 implications. Isolated late so it cannot block the Core Value (already shipped in Phase 7).
-**Plans**: TBD
+**Notes**: Research flag HIGH — the #1 research-risk phase. Needs `/gsd-plan-phase --research-phase 11` for Go toolchain detection, commit-SHA pinning strategy, brew bootstrap chain, the `-print-codex-config <model>` integration decision, and GPL v3 implications. Isolated late so it cannot block the Core Value (already shipped in Phase 7). RESOLVED during planning: CONTEXT D-69..D-75 lock the build sequence; pinned SHA = v0.1.0 tag commit (`1cdae19...`), never main; orchestration mock-tested via runner injection; real build is a gated e2e smoke only.
+**Plans**: 1 plan
+
+Plans:
+
+- [ ] 11-01-PLAN.md — `build_moonbridge` orchestrator (Go 1.25+ gate → pinned-SHA clone never main → `go build -o ~/.codex/moon-bridge ./cmd/moonbridge` → chmod 0755) + mocked-runner unit tests (SC-1/SC-2/SC-3) + optional gated e2e smoke (DEPS-03, DEPS-04, D-69..D-75)
 
 ### Phase 12: CLI `setup` (onboarding orchestrator)
 
@@ -307,7 +311,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 8. CLI status | 1/1 | Complete    | 2026-06-29 |
 | 9. Remaining File Backends | 4/4 | Complete    | 2026-06-29 |
 | 10. Dependency Detection | 1/1 | Complete    | 2026-06-29 |
-| 11. Moon Bridge Install (build-from-source) | 0/0 | Not started | - |
+| 11. Moon Bridge Install (build-from-source) | 0/1 | In progress | - |
 | 12. CLI setup (onboarding orchestrator) | 0/0 | Not started | - |
 | 13. Service Lifecycle | 0/0 | Not started | - |
 | 14. doctor (diagnostic pipeline) | 0/0 | Not started | - |
