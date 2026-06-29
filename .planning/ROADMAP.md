@@ -131,7 +131,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. `apply_openai(apply_zai(doc))` equals `apply_openai(doc)` — the Z.ai block is preserved on revert, not deleted
   3. A post-condition check confirms the provider resolves, has a `base_url`, and no reserved provider id (`openai`/`ollama`/`lmstudio`) is redefined
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 06-01-PLAN.md — Pure provider transforms + canonical templates (`apply_zai`/`apply_openai`, exact-inverse + idempotent) + `check_postconditions` predicate (SC-1/SC-2/SC-3)
 
 ### Phase 7: CLI `use zai` / `use openai`
 
