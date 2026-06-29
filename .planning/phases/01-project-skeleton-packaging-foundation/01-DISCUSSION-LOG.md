@@ -170,7 +170,7 @@
 
 ## Deferred Ideas
 
-- **Обновить PROJECT.md / CLAUDE.md "Technology Stack"** — зафиксированные там Typer и Rich переопределены (D-01 argparse, D-04 без Rich). Рассинхронизация: PROJECT.md Key Decisions помечены "Pending", CLAUDE.md — OVERRIDING. Действие после фазы: привести к канону до/во время Phase 2, чтобы последующие фазы читали согласованный стек.
+- **✅ Обновить PROJECT.md / CLAUDE.md "Technology Stack"** — зафиксированные там Typer и Rich переопределены (D-01 argparse, D-04 без Rich). **Выполнено (commit `cbc7380`)** сразу после Phase 1 context — PROJECT.md и CLAUDE.md приведены к канону (argparse + plain text + ruff). Последующие фазы читают согласованный стек.
 - Rich-вывод для doctor/status — если plain-text окажется неудобочитаемым в Phase 8/14, можно пересмотреть.
 - CI-конфигурация (GitHub Actions matrix Python 3.10–3.13) — Phase 15 (TEST-05).
 - Реальные handler'ы subcommands — каждая команда в своей фазе.
