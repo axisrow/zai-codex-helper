@@ -675,19 +675,22 @@ def test_home_isolated_to_tmp(_isolate_home):
 | A5 | `subprocess.run([sys.executable, "-m", "zai_codex_helper", "--help"])` работает после `pip install .` | test_cli_help.py | LOW — `python -m zai_codex_helper` выполняет `__main__.py`; альтернатива — дёрнуть сам console script `zai-codex-helper --help` (нужен PATH после install). |
 | A6 | stub-handler возвращает `0` (exit success) для всех команд в Phase 1 | Pattern 1 | LOW — planner может выбрать `SystemExit(2)`/"not implemented" вместо `0`; контракт не диктует exit code для stub'ов (они не делают реальной работы). |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Точная форма stub-обработчиков (D-02, на усмотрение planner'а):** печать "not implemented in this phase" + exit 0, или exit 2 (как ошибка), или пустой handler? 
+1. **Точная форма stub-обработчиков (D-02, на усмотрение planner'а):** печать "not implemented in this phase" + exit 0, или exit 2 (как ошибка), или пустой handler?
    - Что we know: D-02 фиксирует, что заглушки есть; форма за planner'ом.
    - Recommendation: exit 0 + stderr-сообщение "not implemented" — наименее удивительно для smoke-теста (`--help` всё равно exit 0; stub-команды не делают вреда). Но если planner хочет, чтобы Phase 1 НЕ позволял случайно вызвать ненастоящую команду — exit 2.
+   — RESOLVED: stub handler печатает `f"{name}: not implemented in this phase"` в stderr и возвращает `0` (Recommendation принята). Принято в 01-01-PLAN.md Task 3, `_stub(name)` (см. 01-01:196).
 
 2. **`pythonpath = ["src"]` нужен ли в `[tool.pytest.ini_options]`?**
    - Что we know: при `pip install -e ".[dev]"` hatchling должен добавить src/ в sys.path (dev-mode-dirs).
    - Recommendation: НЕ добавлять сначала; smoke-тест (`pytest`) покажет, нужен ли. Если `ModuleNotFoundError` — добавить одну строку.
+   — RESOLVED: `pythonpath = ["src"]` НЕ добавляется по умолчанию (Plan 01 Task 1 явно его опускает — 01-01:112); добавляется только как A4-fallback в 01-02-PLAN.md Task 1 (01-02:100,113), если `python -c "import zai_codex_helper"` упадёт с ModuleNotFoundError после `pip install -e ".[dev]"`.
 
 3. **`main()` в `__main__.py` или `cli/__init__.py` (D-10, на усмотрение planner'а)?**
    - Что we know: D-10 даёт выбор. `[project.scripts]` указывает на `zai_codex_helper.__main__:main`.
    - Recommendation: `__main__.py` — стандартное место для entry point; `cli/parser.py` содержит `build_parser()`. main() в `__main__.py` импортирует `build_parser` из `cli`.
+   — RESOLVED: `main()` живёт в `src/zai_codex_helper/__main__.py`; `build_parser()` — в `cli/parser.py`; `__main__.py` импортирует `build_parser` абсолютным импортом (Recommendation принята). Принято в 01-01-PLAN.md Task 3 (см. 01-01:198, 01-01:206).
 
 ## Environment Availability
 
