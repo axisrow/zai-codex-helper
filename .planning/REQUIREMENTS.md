@@ -22,15 +22,15 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **CONF-03**: Бэкап конфигов один раз на пользователя (sentinel-gated; повторный запуск не дублирует бэкап, если уже есть)
 - [x] **CONF-04**: `restore` команда — откат к последнему бэкапу
 - [x] **CONF-05**: Post-condition проверки после записи (provider resolves, has `base_url`, no reserved id redefined)
-- [ ] **CONF-06**: Идемпотентность — повторный `setup`/`use` даёт byte-идентичный результат (upsert, не append)
+- [x] **CONF-06**: Идемпотентность — повторный `setup`/`use` даёт byte-идентичный результат (upsert, не append)
 - [ ] **CONF-07**: `--dry-run` / diff preview перед изменением `~/.codex` и `~/.zshrc`
 
 ### Provider Switching (Core Value)
 
-- [ ] **PROV-01**: `use zai` выставляет Z.ai дефолтом в `~/.codex/config.toml` (`model = "glm-5.2"`, `model_provider = "zai-moonbridge"`, `model_reasoning_effort = "xhigh"`)
-- [ ] **PROV-02**: `use openai` возвращает OpenAI дефолтом (`model = "gpt-5.5"`, `model_provider` убирается/reverts к `openai`), Z.ai provider block сохраняется (обратимо)
+- [x] **PROV-01**: `use zai` выставляет Z.ai дефолтом в `~/.codex/config.toml` (`model = "glm-5.2"`, `model_provider = "zai-moonbridge"`, `model_reasoning_effort = "xhigh"`)
+- [x] **PROV-02**: `use openai` возвращает OpenAI дефолтом (`model = "gpt-5.5"`, `model_provider` убирается/reverts к `openai`), Z.ai provider block сохраняется (обратимо)
 - [x] **PROV-03**: Canonical-значение `wire_api = "responses"` закреплено для провайдера `zai-moonbridge` (Codex шлёт Responses API → Moon Bridge конвертит в Chat → Z.ai)
-- [ ] **PROV-04**: Предупреждение о необходимости рестарта Codex Desktop App после каждой записи (Desktop не live-reload'ит config.toml)
+- [x] **PROV-04**: Предупреждение о необходимости рестарта Codex Desktop App после каждой записи (Desktop не live-reload'ит config.toml)
 - [ ] **PROV-05**: `status` — read-only сводка: текущий дефолтный провайдер, пути к конфигам, версия пакета
 
 ### Secrets
@@ -125,12 +125,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONF-03 | Phase 4 | Complete |
 | CONF-04 | Phase 4 | Complete |
 | CONF-05 | Phase 6 | Complete |
-| CONF-06 | Phase 7 | Pending |
+| CONF-06 | Phase 7 | Complete |
 | CONF-07 | Phase 15 | Pending |
-| PROV-01 | Phase 7 | Pending |
-| PROV-02 | Phase 7 | Pending |
+| PROV-01 | Phase 7 | Complete |
+| PROV-02 | Phase 7 | Complete |
 | PROV-03 | Phase 6 | Complete |
-| PROV-04 | Phase 7 | Pending |
+| PROV-04 | Phase 7 | Complete |
 | PROV-05 | Phase 8 | Pending |
 | SECR-01 | Phase 12 | Pending |
 | SECR-02 | Phase 9 | Pending |
