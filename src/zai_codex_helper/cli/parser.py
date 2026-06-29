@@ -20,6 +20,17 @@ seed-if-missing → backup_once → read → apply_zai/apply_openai →
 write_canonical → check_postconditions → restart warning) and emit a
 hard-to-miss restart warning to stderr (D-47). The remaining commands remain
 stubs until their phases.
+
+Phase 8 (D-50..D-55, PROV-05): ``status`` is the read-only observability
+companion to the Core Value. After ``use zai``, a user runs ``status`` to
+confirm Z.ai is active at a glance — provider + config paths + version, in
+plain text, with NO writes (D-51 — load-bearing). It reuses Phase 5's
+:class:`TomlBackend.read` (read-only) via the Phase 8 read-boundary
+translator (:func:`zai_codex_helper.services.status.read_for_status`), Phase
+2's :meth:`Paths.default`, Phase 1's :data:`__version__`, and Phase 6's
+provider constants. Detection (D-53) is delegated to the pure
+:func:`zai_codex_helper.services.status.detect_provider` helper. The other
+four commands (setup/doctor/install-service/uninstall-service) remain stubs.
 """
 
 import argparse
@@ -269,6 +280,112 @@ def _handle_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_status(args: argparse.Namespace) -> int:
+    """Print the current provider, config paths, and version — READ-ONLY (D-50..D-55, PROV-05).
+
+    Phase 8 — the observability companion to the Core Value. After ``use zai``
+    a user runs ``status`` to confirm Z.ai is active at a glance, without
+    hand-reading ``config.toml``. Prints three plain-text sections (D-50):
+
+    1. **Provider** — the active default provider (Z.ai vs OpenAI builtin) with
+       the flat top-level ``model`` and ``model_reasoning_effort`` values. For
+       a missing config: "OpenAI (builtin default), config.toml not yet
+       created" (D-52 — missing != broken).
+    2. **Config paths** — every ``Paths.default()``-resolved location
+       (``config_toml``, ``moonbridge_yml``, ``models_cache``, ``zshrc``,
+       ``launchagents_dir``) with an ``[exists]`` / ``[missing]`` marker from
+       the read-only ``Path.exists()``.
+    3. **Version** — ``zai-codex-helper <__version__>`` (D-16 single source).
+
+    READ-ONLY GUARANTEE (D-51 — load-bearing, T-08-01): the handler calls ONLY
+    ``TomlBackend.read()`` (when the config exists), ``Path.exists()`` for
+    path markers, and ``zai_codex_helper.__version__``. It does NOT call
+    ``write_canonical`` / ``backup_once`` / ``atomic_write`` / ``os.replace``
+    / ``os.chmod`` / ``unlink`` / ``mkdir`` / ``rename`` — enforced by the
+    static guard in ``tests/test_status.py`` and the byte-identical HOME
+    snapshot test across three seed states.
+
+    ERROR CONTRACT (D-52, T-08-02): the handler does NOT catch
+    :class:`ZaiCodexHelperError` and does NOT call ``sys.exit`` — it lets the
+    read-boundary translator's :class:`ZaiCodexHelperError` (raised on
+    malformed TOML) propagate to :func:`zai_codex_helper.__main__.main`, which
+    formats it per D-11 (one-line ``error: <msg>`` + exit 1, traceback under
+    ``--debug``). Missing config is NOT an error (exit 0, D-52).
+
+    Args:
+        args: The parsed argparse namespace (unused beyond dispatch).
+
+    Returns:
+        0 on a parseable config AND on a missing config. A broken config
+        raises before return (translated by the read boundary; ``main``
+        returns 1).
+    """
+    # Lazy imports keep `parser.py` import-light at module load (mirrors the
+    # `_handle_restore` / `_handle_use_zai` discipline).
+    from zai_codex_helper import __version__
+    from zai_codex_helper.backends.toml import TomlBackend
+    from zai_codex_helper.services.paths import Paths
+    from zai_codex_helper.services.status import detect_provider, read_for_status
+
+    # a. Resolve paths via the production entry point (D-46). In tests the
+    #    autouse `_isolate_home` fixture repoints HOME at tmp_path, so
+    #    Paths.default() resolves under the sandbox — no real-HOME read.
+    paths = Paths.default()
+    # b. Concrete TOML backend (Phase 5) bound to paths.config_toml.
+    backend = TomlBackend(paths)
+
+    # c. Read the config read-only via the Phase 8 read boundary. Returns None
+    #    when the config is missing (D-52: missing != broken). Raises
+    #    ZaiCodexHelperError on malformed TOML — let it propagate (D-11).
+    doc = read_for_status(backend)
+
+    # d. Pure provider detection (D-53, D-54 — no IO in services.status).
+    descriptor = detect_provider(doc)
+
+    # e. Render the three D-50 sections as plain text + minimal ANSI markers
+    #    (CLAUDE.md D-04/D-05 — no Rich). Glanceable: a user runs `status` to
+    #    confirm, not to study.
+    lines: list[str] = []
+    lines.append("Provider:")
+    lines.append(f"  {descriptor.provider_label}")
+    if descriptor.config_present:
+        # Report the observed model/effort values (None -> "unset").
+        model_str = descriptor.model if descriptor.model is not None else "unset"
+        lines.append(f"  model: {model_str}")
+        effort_str = (
+            descriptor.model_reasoning_effort
+            if descriptor.model_reasoning_effort is not None
+            else "unset"
+        )
+        lines.append(f"  model_reasoning_effort: {effort_str}")
+    else:
+        # D-52 missing-config note: OpenAI builtin default, config not yet created.
+        lines.append("  config.toml not yet created")
+
+    lines.append("")
+    lines.append("Config paths:")
+    # D-50 lists these five paths. backup_dir / codex_dir are NOT in D-50's
+    # paths section — do not report them.
+    for field in (
+        "config_toml",
+        "moonbridge_yml",
+        "models_cache",
+        "zshrc",
+        "launchagents_dir",
+    ):
+        resolved = getattr(paths, field)
+        # Read-only existence marker (D-51).
+        marker = "[exists]" if resolved.exists() else "[missing]"
+        lines.append(f"  {field}: {resolved} {marker}")
+
+    lines.append("")
+    lines.append("Version:")
+    lines.append(f"  zai-codex-helper {__version__}")
+
+    print("\n".join(lines))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the root ``zai-codex-helper`` argparse parser.
 
@@ -334,8 +451,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_restore.set_defaults(func=_handle_restore)
 
-    # The remaining 5 top-level commands — each a stub until its phase arrives.
-    for name in ("setup", "status", "doctor", "install-service", "uninstall-service"):
+    # `status` — the read-only observability command (Phase 8, D-50..D-55).
+    # Prints the current provider, config paths, and version. READ-ONLY (D-51).
+    p_status = subparsers.add_parser(
+        "status",
+        help="show current provider, config paths, and version",
+    )
+    p_status.set_defaults(func=_handle_status)
+
+    # The remaining 4 top-level commands — each a stub until its phase arrives
+    # (D-55: status is no longer a stub; setup/doctor/install-service/
+    # uninstall-service belong to later phases).
+    for name in ("setup", "doctor", "install-service", "uninstall-service"):
         sp = subparsers.add_parser(name, help=f"{name} (stub)")
         sp.set_defaults(func=_stub(name))
 
