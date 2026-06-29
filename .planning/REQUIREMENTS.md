@@ -115,13 +115,54 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| _(populated during roadmap creation)_ | | |
+| PKG-01 | Phase 1 | Pending |
+| PKG-02 | Phase 1 | Pending |
+| PKG-03 | Phase 2 | Pending |
+| PKG-04 | Phase 1 | Pending |
+| PKG-05 | Phase 1 | Pending |
+| CONF-01 | Phase 3 | Pending |
+| CONF-02 | Phase 5 | Pending |
+| CONF-03 | Phase 4 | Pending |
+| CONF-04 | Phase 4 | Pending |
+| CONF-05 | Phase 6 | Pending |
+| CONF-06 | Phase 7 | Pending |
+| CONF-07 | Phase 15 | Pending |
+| PROV-01 | Phase 7 | Pending |
+| PROV-02 | Phase 7 | Pending |
+| PROV-03 | Phase 6 | Pending |
+| PROV-04 | Phase 7 | Pending |
+| PROV-05 | Phase 8 | Pending |
+| SECR-01 | Phase 12 | Pending |
+| SECR-02 | Phase 9 | Pending |
+| SECR-03 | Phase 15 | Pending |
+| DIAG-01 | Phase 14 | Pending |
+| DIAG-02 | Phase 14 | Pending |
+| DIAG-03 | Phase 14 | Pending |
+| DIAG-04 | Phase 14 | Pending |
+| SERV-01 | Phase 13 | Pending |
+| SERV-02 | Phase 13 | Pending |
+| SERV-03 | Phase 13 | Pending |
+| SERV-04 | Phase 13 | Pending |
+| DEPS-01 | Phase 10 | Pending |
+| DEPS-02 | Phase 10 | Pending |
+| DEPS-03 | Phase 11 | Pending |
+| DEPS-04 | Phase 11 | Pending |
+| SETUP-01 | Phase 12 | Pending |
+| SETUP-02 | Phase 12 | Pending |
+| SETUP-03 | Phase 12 | Pending |
+| SEC-01 | Phase 9 | Pending |
+| SEC-02 | Phase 15 | Pending |
+| TEST-01 | Phase 15 | Pending |
+| TEST-02 | Phase 15 | Pending |
+| TEST-03 | Phase 15 | Pending |
+| TEST-04 | Phase 15 | Pending |
+| TEST-05 | Phase 15 | Pending |
 
 **Coverage:**
-- v1 requirements: 41 total
-- Mapped to phases: 0
-- Unmapped: 41 ⚠️ _(pending roadmap creation)_
+- v1 requirements: 42 total
+- Mapped to phases: 42
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-29 after initial definition*
+*Last updated: 2026-06-29 after roadmap creation (traceability populated)*
