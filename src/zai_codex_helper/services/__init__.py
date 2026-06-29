@@ -7,4 +7,10 @@ this layer pure makes the transforms trivially unit-testable (input → output,
 no IO).
 
 Phase 1: intentionally empty (transforms arrive in phases 6/7).
+
+Phase 2: adds :class:`Paths` (the pure-domain path-resolution object).
 """
+
+from zai_codex_helper.services.paths import Paths
+
+__all__ = ["Paths"]
