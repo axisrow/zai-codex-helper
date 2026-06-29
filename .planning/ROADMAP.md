@@ -186,7 +186,14 @@ Plans:
   3. JsonBackend performs idempotent object-level writes (merge, not append) for `models_cache.json`
   4. PlistBackend emits a LaunchAgent plist with `KeepAlive`/`RunAtLoad` and an absolute resolved binary path (no literal `~`)
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+
+- [ ] 09-01-PLAN.md — YamlBackend for `moonbridge-zai.yml` via `yaml.safe_dump` at `0600` (SC-1, SECR-02)
+- [ ] 09-02-PLAN.md — ShellBackend marker-fenced idempotent block in `.zshrc` + clean `remove_block` (SC-2, SEC-01)
+- [ ] 09-03-PLAN.md — JsonBackend idempotent object-level deep-merge for `models_cache.json` (SC-3)
+- [ ] 09-04-PLAN.md — PlistBackend full-canonical LaunchAgent plist with absolute resolved binary path, no literal `~` (SC-4)
 
 ### Phase 10: Dependency Detection
 
