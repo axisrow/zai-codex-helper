@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 11
-current_phase_name: moon-bridge-install
+current_phase: 12
+current_phase_name: onboarding orchestrator
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-06-29T16:57:07.764Z"
+last_updated: "2026-06-29T17:20:00.031Z"
 last_activity: 2026-06-29
-last_activity_desc: Phase 11 execution started
+last_activity_desc: Phase 11 complete, transitioned to Phase 12
 progress:
   total_phases: 15
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 16
-  completed_plans: 15
-  percent: 67
+  completed_plans: 16
+  percent: 73
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 11 (moon-bridge-install) — EXECUTING
-Plan: 1 of 1
+Phase: 12 — CLI `setup` (onboarding orchestrator)
+Plan: Not started
 Status: Executing Phase 11
-Last activity: 2026-06-29 — Phase 11 execution started
+Last activity: 2026-06-29 — Phase 11 complete, transitioned to Phase 12
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -39,7 +39,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | 08 | 1 | - | - |
 | 09 | 4 | - | - |
 | 10 | 1 | - | - |
+| 11 | 1 | - | - |
 
 **Recent Trend:**
 
