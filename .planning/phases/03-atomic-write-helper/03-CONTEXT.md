@@ -35,8 +35,11 @@ Phase 3's helper is the counterpart: `Paths` resolves *where*, this helper decid
 <decisions>
 ## Implementation Decisions
 
+### Atomic-write contract
+- **D-26:** The atomic-write helper lives at the file-IO boundary — `src/zai_codex_helper/backends/_atomic.py` — and exposes `atomic_write(path, data, mode=None)`. The load-bearing sequence is: `path.parent.mkdir(parents=True, exist_ok=True)` → `tempfile.NamedTemporaryFile(dir=path.parent, delete=False)` → write data → `os.fsync(fd)` → close temp → `os.replace(temp, path)` → `os.chmod(path, mode)` IFF `mode is not None`. On any exception: `os.unlink(temp)` (no partial file) and re-raise. `mode=None` preserves existing/umask mode (config.toml); `mode=0o600` chmods after replace (secrets). stdlib-only (no `atomicwrites` package). This is the single write mechanism all Phase 4+ backends consume; `Paths` (Phase 2, pure) deliberately deferred all writes to it.
+
 ### Claude's Discretion (infrastructure phase)
-All implementation choices are at Claude's discretion — this is a pure
+All remaining implementation choices are at Claude's discretion — this is a pure
 infrastructure phase (one stdlib helper). The planner should pick the idiomatic
 2025 stdlib approach. Non-binding guidance from prior decisions / CLAUDE.md:
 
