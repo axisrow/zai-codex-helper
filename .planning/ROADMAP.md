@@ -24,7 +24,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Canonical Templates & Provider Transforms** - Pure desired-state bodies + symmetric `apply_zai`/`apply_openai` transforms (Core Value logic) (completed 2026-06-29)
 - [x] **Phase 7: CLI `use zai` / `use openai`** - The product: one command flips Z.ai to default, one flips it back, with Desktop-restart warning (completed 2026-06-29)
 - [x] **Phase 8: CLI `status`** - Read-only summary of current default provider, config paths, and package version (completed 2026-06-29)
-- [ ] **Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)** - The disk-touching backends needed by `setup`, `install-service`, and `models_cache`
+- [x] **Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)** - The disk-touching backends needed by `setup`, `install-service`, and `models_cache` (completed 2026-06-29)
 - [ ] **Phase 10: Dependency Detection** - `shutil.which`-based detection of Go / brew / Moon Bridge binary with offer-to-install consent
 - [ ] **Phase 11: Moon Bridge Install (build-from-source)** - Go version check → brew bootstrap → pinned-SHA clone → `go build` → `chmod 0755` (HIGHEST research risk)
 - [ ] **Phase 12: CLI `setup` (onboarding orchestrator)** - Interactive sequencer over all sub-operations, scriptable with `--yes`/`--no-input`, idempotent
@@ -186,14 +186,14 @@ Plans:
   3. JsonBackend performs idempotent object-level writes (merge, not append) for `models_cache.json`
   4. PlistBackend emits a LaunchAgent plist with `KeepAlive`/`RunAtLoad` and an absolute resolved binary path (no literal `~`)
 
-**Plans**: 4 plans
+**Plans**: 4/4 plans complete
 
 Plans:
 
-- [ ] 09-01-PLAN.md — YamlBackend for `moonbridge-zai.yml` via `yaml.safe_dump` at `0600` (SC-1, SECR-02)
-- [ ] 09-02-PLAN.md — ShellBackend marker-fenced idempotent block in `.zshrc` + clean `remove_block` (SC-2, SEC-01)
-- [ ] 09-03-PLAN.md — JsonBackend idempotent object-level deep-merge for `models_cache.json` (SC-3)
-- [ ] 09-04-PLAN.md — PlistBackend full-canonical LaunchAgent plist with absolute resolved binary path, no literal `~` (SC-4)
+- [x] 09-01-PLAN.md — YamlBackend for `moonbridge-zai.yml` via `yaml.safe_dump` at `0600` (SC-1, SECR-02)
+- [x] 09-02-PLAN.md — ShellBackend marker-fenced idempotent block in `.zshrc` + clean `remove_block` (SC-2, SEC-01)
+- [x] 09-03-PLAN.md — JsonBackend idempotent object-level deep-merge for `models_cache.json` (SC-3)
+- [x] 09-04-PLAN.md — PlistBackend full-canonical LaunchAgent plist with absolute resolved binary path, no literal `~` (SC-4)
 
 ### Phase 10: Dependency Detection
 
@@ -301,7 +301,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 6. Canonical Templates & Provider Transforms | 1/1 | Complete    | 2026-06-29 |
 | 7. CLI use zai / use openai | 1/1 | Complete    | 2026-06-29 |
 | 8. CLI status | 1/1 | Complete    | 2026-06-29 |
-| 9. Remaining File Backends | 0/0 | Not started | - |
+| 9. Remaining File Backends | 4/4 | Complete   | 2026-06-29 |
 | 10. Dependency Detection | 0/0 | Not started | - |
 | 11. Moon Bridge Install (build-from-source) | 0/0 | Not started | - |
 | 12. CLI setup (onboarding orchestrator) | 0/0 | Not started | - |
