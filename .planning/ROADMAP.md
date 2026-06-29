@@ -293,7 +293,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 5. TomlBackend (config.toml via tomlkit) | 1/1 | Complete    | 2026-06-29 |
 | 6. Canonical Templates & Provider Transforms | 1/1 | Complete    | 2026-06-29 |
 | 7. CLI use zai / use openai | 1/1 | Complete    | 2026-06-29 |
-| 8. CLI status | 1/1 | Complete   | 2026-06-29 |
+| 8. CLI status | 1/1 | Complete    | 2026-06-29 |
 | 9. Remaining File Backends | 0/0 | Not started | - |
 | 10. Dependency Detection | 0/0 | Not started | - |
 | 11. Moon Bridge Install (build-from-source) | 0/0 | Not started | - |

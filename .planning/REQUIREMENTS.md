@@ -31,7 +31,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **PROV-02**: `use openai` возвращает OpenAI дефолтом (`model = "gpt-5.5"`, `model_provider` убирается/reverts к `openai`), Z.ai provider block сохраняется (обратимо)
 - [x] **PROV-03**: Canonical-значение `wire_api = "responses"` закреплено для провайдера `zai-moonbridge` (Codex шлёт Responses API → Moon Bridge конвертит в Chat → Z.ai)
 - [x] **PROV-04**: Предупреждение о необходимости рестарта Codex Desktop App после каждой записи (Desktop не live-reload'ит config.toml)
-- [ ] **PROV-05**: `status` — read-only сводка: текущий дефолтный провайдер, пути к конфигам, версия пакета
+- [x] **PROV-05**: `status` — read-only сводка: текущий дефолтный провайдер, пути к конфигам, версия пакета
 
 ### Secrets
 
@@ -131,7 +131,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROV-02 | Phase 7 | Complete |
 | PROV-03 | Phase 6 | Complete |
 | PROV-04 | Phase 7 | Complete |
-| PROV-05 | Phase 8 | Pending |
+| PROV-05 | Phase 8 | Complete |
 | SECR-01 | Phase 12 | Pending |
 | SECR-02 | Phase 9 | Pending |
 | SECR-03 | Phase 15 | Pending |
