@@ -34,6 +34,7 @@
 - ✓ `zai-codex-helper status` (read-only: текущий провайдер + 5 config-путей + версия; доказано не мутирует — snapshot byte-identical до/после; missing≠broken) — Validated in Phase 8: CLI status (PROV-05).
 - ✓ 4 оставшихся file-backend'а за `ConfigBackend` ABC: `YamlBackend` (moonbridge-zai.yml @`0600`), `ShellBackend` (.zshrc marker-fence, idempotent), `JsonBackend` (models_cache.json deep-merge), `PlistBackend` (LaunchAgent plist, абсолютный путь без `~`) — Validated in Phase 9: Remaining File Backends (SECR-02/SEC-01). 183 теста. *F841 ruff-gap найден verifier'ом и исправлен (64ed0fb).*
 - ✓ Dependency detection (`detect_go`/`detect_brew`/`detect_moonbridge_binary` → `DepResult`; brew arch `/opt/homebrew` vs `/usr/local` runtime resolution; `offer_install` never-auto-install + platform gate) — Validated in Phase 10: Dependency Detection (DEPS-01/02). 210 тестов.
+- ✓ Moon Bridge build-from-source (`build_moonbridge`: pinned SHA `1cdae19…` v0.1.0 never main → `git clone`+checkout → `go build -o ~/.codex/moon-bridge` → `chmod 0755`; Go 1.25+ gate с brew one-liner; idempotent skip; НЕ вендорится в wheel GPL v3) — Validated in Phase 11: Moon Bridge Install (DEPS-03/04). 228 тестов. Оркестрация mock-tested; e2e real-build smoke gated.
 
 ### Active
 
