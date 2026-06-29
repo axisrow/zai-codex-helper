@@ -25,7 +25,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: CLI `use zai` / `use openai`** - The product: one command flips Z.ai to default, one flips it back, with Desktop-restart warning (completed 2026-06-29)
 - [x] **Phase 8: CLI `status`** - Read-only summary of current default provider, config paths, and package version (completed 2026-06-29)
 - [x] **Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)** - The disk-touching backends needed by `setup`, `install-service`, and `models_cache` (completed 2026-06-29)
-- [ ] **Phase 10: Dependency Detection** - `shutil.which`-based detection of Go / brew / Moon Bridge binary with offer-to-install consent
+- [x] **Phase 10: Dependency Detection** - `shutil.which`-based detection of Go / brew / Moon Bridge binary with offer-to-install consent (completed 2026-06-29)
 - [ ] **Phase 11: Moon Bridge Install (build-from-source)** - Go version check → brew bootstrap → pinned-SHA clone → `go build` → `chmod 0755` (HIGHEST research risk)
 - [ ] **Phase 12: CLI `setup` (onboarding orchestrator)** - Interactive sequencer over all sub-operations, scriptable with `--yes`/`--no-input`, idempotent
 - [ ] **Phase 13: Service Lifecycle** - `install-service`/`uninstall-service` LaunchAgent pair sharing a plist Label constant
@@ -211,7 +211,7 @@ Plans:
 
 Plans:
 
-- [ ] 10-01-PLAN.md — DepResult + detect_go/detect_brew/detect_moonbridge_binary (AS vs Intel brew at runtime) + shared confirm() helper + offer_install with platform gate and never-auto-install boundary (SC-1/SC-2/SC-3, DEPS-01/DEPS-02)
+- [x] 10-01-PLAN.md — DepResult + detect_go/detect_brew/detect_moonbridge_binary (AS vs Intel brew at runtime) + shared confirm() helper + offer_install with platform gate and never-auto-install boundary (SC-1/SC-2/SC-3, DEPS-01/DEPS-02)
 
 ### Phase 11: Moon Bridge Install (build-from-source orchestration)
 
@@ -306,7 +306,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 7. CLI use zai / use openai | 1/1 | Complete    | 2026-06-29 |
 | 8. CLI status | 1/1 | Complete    | 2026-06-29 |
 | 9. Remaining File Backends | 4/4 | Complete    | 2026-06-29 |
-| 10. Dependency Detection | 1/1 | Planned | - |
+| 10. Dependency Detection | 1/1 | Complete   | 2026-06-29 |
 | 11. Moon Bridge Install (build-from-source) | 0/0 | Not started | - |
 | 12. CLI setup (onboarding orchestrator) | 0/0 | Not started | - |
 | 13. Service Lifecycle | 0/0 | Not started | - |
