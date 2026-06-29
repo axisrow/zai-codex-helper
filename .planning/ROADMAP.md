@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Backup Coordinator & ConfigBackend ABC** - Once-per-user sentinel backup + the backend contract every file type implements (completed 2026-06-29)
 - [x] **Phase 5: TomlBackend (config.toml via tomlkit)** - Lossless round-trip patching of `config.toml` preserving comments, key order, and Codex trust blocks (completed 2026-06-29)
 - [x] **Phase 6: Canonical Templates & Provider Transforms** - Pure desired-state bodies + symmetric `apply_zai`/`apply_openai` transforms (Core Value logic) (completed 2026-06-29)
-- [ ] **Phase 7: CLI `use zai` / `use openai`** - The product: one command flips Z.ai to default, one flips it back, with Desktop-restart warning
+- [x] **Phase 7: CLI `use zai` / `use openai`** - The product: one command flips Z.ai to default, one flips it back, with Desktop-restart warning (completed 2026-06-29)
 - [ ] **Phase 8: CLI `status`** - Read-only summary of current default provider, config paths, and package version
 - [ ] **Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)** - The disk-touching backends needed by `setup`, `install-service`, and `models_cache`
 - [ ] **Phase 10: Dependency Detection** - `shutil.which`-based detection of Go / brew / Moon Bridge binary with offer-to-install consent
@@ -150,10 +150,11 @@ Plans:
   3. Every write is followed by a hard-to-miss restart warning telling the user the Codex Desktop App does not live-reload `config.toml`
   4. Running `use zai` twice produces byte-identical output (idempotent upsert, not append)
 
-**Plans**: 1 plan
+**Plans**: 1/1 plans complete
 
 Plans:
-- [ ] 07-01-PLAN.md — Wire `use zai` / `use openai` handlers with the shared D-45 write pipeline + D-47 restart warning, pinned by on-disk integration tests for all 4 SCs (PROV-01/02/04, CONF-06)
+
+- [x] 07-01-PLAN.md — Wire `use zai` / `use openai` handlers with the shared D-45 write pipeline + D-47 restart warning, pinned by on-disk integration tests for all 4 SCs (PROV-01/02/04, CONF-06)
 
 ### Phase 8: CLI `status`
 
@@ -287,7 +288,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 4. Backup Coordinator & ConfigBackend ABC | 2/2 | Complete    | 2026-06-29 |
 | 5. TomlBackend (config.toml via tomlkit) | 1/1 | Complete    | 2026-06-29 |
 | 6. Canonical Templates & Provider Transforms | 1/1 | Complete    | 2026-06-29 |
-| 7. CLI use zai / use openai | 0/0 | Not started | - |
+| 7. CLI use zai / use openai | 1/1 | Complete   | 2026-06-29 |
 | 8. CLI status | 0/0 | Not started | - |
 | 9. Remaining File Backends | 0/0 | Not started | - |
 | 10. Dependency Detection | 0/0 | Not started | - |
