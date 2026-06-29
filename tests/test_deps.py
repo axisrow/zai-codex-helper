@@ -30,12 +30,15 @@ import subprocess
 
 import pytest
 
+from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.deps import (
     DepResult,
     detect_brew,
     detect_go,
     detect_moonbridge_binary,
+    offer_install,
 )
+from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.paths import Paths
 
 # ---------------------------------------------------------------------------
@@ -272,3 +275,166 @@ def test_detect_moonbridge_binary_takes_injected_paths():
 
     sig = inspect.signature(detect_moonbridge_binary)
     assert "paths" in sig.parameters
+
+
+# ===========================================================================
+# SC-2 / SC-3 — confirm() helper + offer_install flow (D-65, D-66)
+# ===========================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "answer, expected",
+    [
+        ("y", True),
+        ("Y", True),
+        ("yes", True),
+        ("  YES  ", True),
+        ("n", False),
+        ("no", False),
+        ("", False),
+        ("maybe", False),
+    ],
+)
+def test_confirm_parses_yes_no(answer, expected):
+    """confirm returns True only on explicit y/yes (trimmed, case-insensitive)."""
+
+    def fake_input(_prompt):
+        return answer
+
+    assert confirm("Proceed?", input_fn=fake_input) is expected
+
+
+@pytest.mark.unit
+def test_confirm_eof_returns_false():
+    """A closed stdin (EOFError) returns False rather than crashing."""
+
+    def raise_eof(_prompt):
+        raise EOFError
+
+    assert confirm("Proceed?", input_fn=raise_eof) is False
+
+
+@pytest.mark.unit
+def test_offer_install_darwin_consent_yes_returns_true(capsys):
+    """On darwin with consent 'yes' offer_install returns True and prints the one-liner."""
+    result = offer_install(
+        "Go",
+        "brew install go",
+        confirm_fn=lambda _prompt: True,
+        platform_check="darwin",
+    )
+    assert result is True
+    out = capsys.readouterr().out
+    assert "Go" in out
+    assert "brew install go" in out
+
+
+@pytest.mark.unit
+def test_offer_install_darwin_consent_no_returns_false_and_reprints(capsys):
+    """On darwin with consent 'no' offer_install returns False AND re-prints the one-liner."""
+    result = offer_install(
+        "Go",
+        "brew install go",
+        confirm_fn=lambda _prompt: False,
+        platform_check="darwin",
+    )
+    assert result is False
+    out = capsys.readouterr().out
+    # The one-liner appears at least twice: initial message + the re-print.
+    assert out.count("brew install go") >= 2
+
+
+@pytest.mark.unit
+def test_offer_install_never_auto_installs_on_consent_yes(monkeypatch):
+    """SC-2 SECURITY SPY: even on explicit 'yes', no brew/go install subprocess fires."""
+
+    calls = []
+
+    def spy_run(argv, *args, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("zai_codex_helper.services.deps.subprocess.run", spy_run)
+
+    result = offer_install(
+        "Go",
+        "brew install go",
+        confirm_fn=lambda _prompt: True,
+        platform_check="darwin",
+    )
+    assert result is True
+    _assert_no_install_subprocess(calls)
+
+
+@pytest.mark.unit
+def test_offer_install_never_auto_installs_on_consent_no(monkeypatch):
+    """SC-2 SECURITY SPY: on consent 'no', no brew/go install subprocess fires."""
+
+    calls = []
+
+    def spy_run(argv, *args, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("zai_codex_helper.services.deps.subprocess.run", spy_run)
+
+    result = offer_install(
+        "Go",
+        "brew install go",
+        confirm_fn=lambda _prompt: False,
+        platform_check="darwin",
+    )
+    assert result is False
+    _assert_no_install_subprocess(calls)
+
+
+def _assert_no_install_subprocess(calls):
+    """Assert none of the spied argv installs Go or brew (D-65 / DEPS-02)."""
+    for argv in calls:
+        first = argv[0] if argv else ""
+        if first == "brew" and len(argv) >= 2 and argv[1] == "install":
+            pytest.fail(f"offer_install ran a brew install: {argv}")
+        if first == "go" and "install" in argv:
+            pytest.fail(f"offer_install ran a go install: {argv}")
+    # No subprocess.run calls at all is also acceptable (and expected).
+    assert calls == [], (
+        f"offer_install must not invoke any subprocess, but did: {calls}"
+    )
+
+
+@pytest.mark.unit
+def test_offer_install_non_darwin_raises_macos_only():
+    """SC-3: offer_install on non-darwin raises ZaiCodexHelperError without confirm_fn."""
+
+    def boom(_prompt):
+        raise AssertionError("confirm_fn must NOT be called on non-darwin")
+
+    with pytest.raises(ZaiCodexHelperError) as excinfo:
+        offer_install(
+            "Go",
+            "brew install go",
+            confirm_fn=boom,
+            platform_check="linux",
+        )
+    assert "macOS" in str(excinfo.value)
+
+
+@pytest.mark.unit
+def test_offer_install_non_darwin_does_not_touch_confirm(monkeypatch):
+    """SC-3: non-darwin path never reaches confirm_fn (no subprocess, no prompt)."""
+    # A confirm_fn that mutates state proves it was never called.
+    called = {"n": 0}
+
+    def trap(_prompt):
+        called["n"] += 1
+        return True
+
+    with pytest.raises(ZaiCodexHelperError):
+        offer_install(
+            "brew",
+            "see https://brew.sh",
+            confirm_fn=trap,
+            platform_check="win32",
+        )
+    assert called["n"] == 0

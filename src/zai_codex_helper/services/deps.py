@@ -1,13 +1,13 @@
-"""Phase 10 — dependency detection for Go / brew / the Moon Bridge binary.
+"""Phase 10 — dependency detection + offer-to-install for Go / brew / Moon Bridge.
 
 This module is the READ-ONLY prerequisite for Phase 11 (build-from-source)
-and Phase 12 (``setup`` orchestrator). The DETECTION functions here only
-report presence; a sibling :func:`offer_install` flow (added in the second
-task of this phase) OFFERS to install a missing toolchain with explicit
-consent. This module never builds, never clones, never pins a SHA, never
-detects a live process/port, and writes nothing (D-68 scope discipline).
+and Phase 12 (``setup`` orchestrator). The DETECTION functions report
+presence; :func:`offer_install` OFFERS to install a missing toolchain with
+explicit consent and a macOS platform gate. This module never builds, never
+clones, never pins a SHA, never detects a live process/port, and writes
+nothing (D-68 scope discipline).
 
-WHAT LIVES HERE (D-63, D-64, D-67):
+WHAT LIVES HERE (D-63, D-64, D-65, D-66, D-67):
 
 - :class:`DepResult` — frozen dataclass (``present``/``path``/``version``/
   ``detail``) returned by every detector.
@@ -22,11 +22,17 @@ WHAT LIVES HERE (D-63, D-64, D-67):
   exists AND is owner-executable (``stat.S_IXUSR``). Takes the INJECTED
   :class:`~zai_codex_helper.services.paths.Paths` — never hard-codes
   ``~/.codex`` (D-22/D-23).
+- :func:`offer_install` — prints the actionable brew one-liner, gates on
+  ``sys.platform == "darwin"`` (raises :class:`ZaiCodexHelperError` on
+  non-darwin), and returns ``True`` only on explicit consent. It NEVER
+  subprocess-runs a system-toolchain install (D-65 / DEPS-02).
 
 PURITY (D-67, D-68): the three detectors are read-only — they use
 ``shutil.which``, ``Path.exists``, ``os.stat`` and one ``go version``
-subprocess. No writes, no system-toolchain install subprocess, no platform
-gate (detection is cross-platform per D-66; only the offer path gates).
+subprocess. ``offer_install`` prints, prompts (via the shared
+:func:`~zai_codex_helper.services.io.confirm`) and returns a bool; it does
+NOT mutate the system. No detection function performs a platform gate
+(detection is cross-platform per D-66; only the offer path gates).
 """
 
 from __future__ import annotations
@@ -35,9 +41,12 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from zai_codex_helper.errors import ZaiCodexHelperError
+from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.paths import Paths
 
 __all__ = [
@@ -45,6 +54,7 @@ __all__ = [
     "detect_go",
     "detect_brew",
     "detect_moonbridge_binary",
+    "offer_install",
 ]
 
 
@@ -203,3 +213,61 @@ def _is_executable_file(path: Path) -> bool:
     except OSError:
         return False
     return bool(mode & stat.S_IXUSR)
+
+
+def offer_install(
+    toolchain: str,
+    install_command: str,
+    *,
+    confirm_fn=confirm,
+    platform_check: str = sys.platform,
+) -> bool:
+    """Offer to install a missing ``toolchain``, gated to macOS (D-65, D-66).
+
+    Prints an actionable message naming the missing toolchain and the exact
+    install one-liner the user should run, then:
+
+    - **Non-darwin** (``platform_check != "darwin"``): raises
+      :class:`ZaiCodexHelperError` with a "macOS only" message WITHOUT
+      calling ``confirm_fn`` or any subprocess. Detection itself is
+      cross-platform, but the offer/install path is darwin-only (D-66).
+    - **darwin**: calls ``confirm_fn``; explicit "yes" returns ``True``
+      (the caller decides what to do — Phase 11 builds, Phase 12 guides);
+      anything else returns ``False`` AND re-prints the one-liner so the
+      user can run it themselves.
+
+    SECURITY BOUNDARY (D-65 / DEPS-02 — absolute): this function NEVER
+    invokes a system-toolchain install. It prints, prompts (via the shared
+    :func:`~zai_codex_helper.services.io.confirm` helper), and returns a
+    bool — it does not mutate the system. The tool surfaces the command;
+    the USER runs system-toolchain installs.
+
+    Args:
+        toolchain: human name of the missing toolchain (e.g. ``"Go"``).
+        install_command: the exact install one-liner to surface (e.g.
+            ``"brew install go"``).
+        confirm_fn: yes/no prompt; defaults to the shared
+            :func:`~zai_codex_helper.services.io.confirm` helper (reused by
+            Phase 12 ``setup``).
+        platform_check: injected ``sys.platform`` for testability.
+
+    Returns:
+        ``True`` iff the user explicitly consented on darwin.
+
+    Raises:
+        ZaiCodexHelperError: on non-darwin platforms (macOS-only offer path).
+    """
+    if platform_check != "darwin":
+        raise ZaiCodexHelperError(
+            f"macOS only — {toolchain} management is macOS-specific."
+        )
+
+    print(
+        f"{toolchain} not found. To build Moon Bridge, install it:\n"
+        f"  {install_command}"
+    )
+    if confirm_fn(f"Run `{install_command}` now?"):
+        return True
+    # User declined — re-print so they can run it manually (D-65).
+    print(f"You can install it later with:\n  {install_command}")
+    return False
