@@ -26,6 +26,7 @@
 - ✓ `codex exec` через профиль `zai-glm` отвечает на `glm-5.2 xhigh` — existing
 - ✓ pip-installable пакет `zai-codex-helper` с CLI entrypoint (Python 3.10+, `pyproject.toml` + hatchling, src-layout, dynamic version, console script `zai-codex-helper`) — Validated in Phase 1: Project Skeleton & Packaging Foundation (PKG-01/02). Команды пока stab'ы, реальная логика в последующих фазах.
 - ✓ Инъектируемый frozen `Paths` объект (`Paths.from_home`/`Paths.default`, 7 путей через один injected home) — Validated in Phase 2: Injectable Paths Object (PKG-03). Тесты провалируемо не трогают реальный `$HOME`.
+- ✓ Atomic-write helper (`atomic_write(path, data, mode=None)`: temp+fsync+os.replace, `0600` для секретов) — Validated in Phase 3: Atomic Write Helper (CONF-01). Единственный механизм записи для всех будущих backends.
 
 ### Active
 
