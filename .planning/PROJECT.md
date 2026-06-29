@@ -1,0 +1,105 @@
+# zai-codex-helper
+
+## What This Is
+
+`zai-codex-helper` — это pip-installable Python CLI для macOS, который управляет связкой **Codex ⇄ Moon Bridge ⇄ Z.ai** без ручного редактирования `~/.codex/config.toml`, `~/.zshrc` и `moonbridge-zai.yml`. Позволяет одной командой переключать дефолтный провайдер Codex (CLI и Desktop App) между Z.ai (`glm-5.2 xhigh`) и OpenAI, и обратно. Предназначен для разработчиков, использующих Codex вместе с моделями Z.ai.
+
+## Core Value
+
+Пользователь может **одной командой** (`zai-codex-helper use zai`) сделать Z.ai дефолтным провайдером Codex CLI и Desktop App, и одной командой (`use openai`) вернуть OpenAI — без ручной правки TOML/YAML/shell-файлов. Если это работает, всё остальное вторично.
+
+## Business Context
+
+- **Customer**: Разработчики, использующие Codex (CLI/Desktop) вместе с Z.ai GLM-моделями
+- **Revenue model**: Open-source, бесплатно (PyPI)
+- **Success metric**: Пакет публикуется в PyPI, `setup` → `use zai` → Codex отвечает через Z.ai «из коробки» на macOS
+- **Strategy notes**: Автоматизация уже работающей у автора ручной конфигурации
+
+## Requirements
+
+### Validated
+
+<!-- Ручная CLI-настройка уже работает у автора — это валидированный baseline. -->
+
+- ✓ Связка Codex CLI ⇄ Moon Bridge ⇄ Z.ai работает вручную — existing (CLI only)
+- ✓ Moon Bridge слушает `127.0.0.1:38440` и проксирует запросы в Z.ai upstream — existing
+- ✓ `codex exec` через профиль `zai-glm` отвечает на `glm-5.2 xhigh` — existing
+
+### Active
+
+<!-- Текущий скоуп v1. Гипотезы до публикации и валидации. -->
+
+- [ ] pip-installable пакет `zai-codex-helper` с CLI entrypoint (Python 3.10+, `pyproject.toml` + hatchling)
+- [ ] Команды: `setup`, `use zai`, `use openai`, `status`, `doctor`, `install-service`, `uninstall-service`
+- [ ] `setup` — интерактивный онбординг (default provider, shell helpers, LaunchAgent, установка/настройка Moon Bridge)
+- [ ] `use zai` выставляет Z.ai дефолтом в `~/.codex/config.toml` (`glm-5.2`, `zai-moonbridge`, `xhigh`)
+- [ ] `use openai` возвращает OpenAI дефолтом (`gpt-5.5`), Z.ai-блок сохраняется
+- [ ] Desktop App наследует дефолт из `config.toml` (новая Terra — не настроено вручную)
+- [ ] `doctor` — диагностика всей цепочки (binary, порт, `/v1/models`, `/v1/responses`, models_cache, текущий дефолт)
+- [ ] `install-service`/`uninstall-service` — macOS LaunchAgent для автозапуска Moon Bridge
+- [ ] Обновление `models_cache.json` записью `glm-5.2` (убирает warning о missing model metadata)
+- [ ] Бэкап конфигов: один раз на пользователя при первом изменении (не на каждый запуск)
+- [ ] Никаких захардкоженных ключей — только интерактивный ввод / `ZAI_API_KEY` из окружения, права `0600`
+- [ ] Полный набор тестов: unit, integration, smoke (CI) + e2e (локально, вне CI), TDD-подход
+
+### Out of Scope
+
+- **Windows** — нативная поддержка не планируется (Out of Scope)
+- **Linux нативный systemd-сервис** — не делаем; Linux покрыт через Docker только для тестирования (см. Constraints)
+- **Desktop App acceptance как автотест** — restart Codex Desktop и визуальная проверка `glm-5.2 xhigh` остаются мануальным чек-листом приёмки
+- **e2e-тесты в CI** — требуют живого `ZAI_API_KEY` + запущенного Moon Bridge; прогоняются локально автором перед релизом
+- **«Обнаружить и синхронизировать» существующие настройки** — `setup` всегда приводит файлы к каноничному виду (с бэкапом), а не пытается мержить
+- **Бэкап перед каждым изменением** — устаревший пункт из исходного issue; заменён на «один раз на пользователя»
+
+## Context
+
+- **CLI уже работает вручную у автора** — целевое состояние файлов (`config.toml`, `moonbridge-zai.yml`, `.zshrc`, `models_cache.json`), команды, ключи и пути известны из практики. Это сильно снижает риск проектирования.
+- **Desktop App — новая Terra:** ручная настройка через `config.toml` для Desktop App ещё не проверена. Требует отдельной acceptance-проверки (restart Desktop, новый thread показывает `glm-5.2 xhigh`, нет warning'а о model metadata).
+- **Moon Bridge:** слушает `127.0.0.1:38440`, `server.auth_token` удаляется (локальный слушатель не требует `MOONBRIDGE_API_KEY`), `codex_tool_proxy.enabled = true`, upstream `https://api.z.ai/api/coding/paas/v4/chat/completions`.
+- **Установка Moon Bridge:** скорее готовый бинарник, но нужен research доступных опций (релизные бинарники с GitHub, `~/.codex/moon-bridge`, сборка из Go-исходников как фоллбэк).
+- **Зависимость от Go:** если Moon Bridge требует сборки — проверяем Go на машине пользователя. Нет Go → предлагаем `brew install go`; нет brew → предлагаем установить brew. Если найден готовый бинарник — Go не нужен.
+- **Тестирование:** TDD. Слои — unit (патч TOML/YAML, идемпотентность, бэкап — tmp/mocks), integration (запись во временный `HOME`, `doctor` против фейк-сервиса Moon Bridge), smoke (полный `setup → doctor` без вызова модели), e2e (живой `codex exec` через Z.ai, локально).
+- **Docker:** используется только для воспроизводимого прогона тестов; для финального пользователя не требуется, не является опцией пакета и не входит в зависимости.
+
+## Constraints
+
+- **Платформа**: macOS — основная и единственная поддерживаемая платформа v1 (LaunchAgent, `~/Library/LaunchAgents/`, `.zshrc`) — пользователи на macOS
+- **Python**: 3.10+ (минимальная поддерживаемая версия)
+- **Упаковка**: `pyproject.toml` + hatchling (стандартный современный стек)
+- **Linux**: только через Docker для тестирования; нативная поддержка out of scope
+- **Windows**: out of scope
+- **CI**: прогоняет unit + integration + smoke; e2e прогоняется локально автором (требует живого ключа и сервиса)
+- **Безопасность**: никаких захардкоженных ключей в пакете; ключ пользователя хранится с правами `0600`
+- **Идемпотентность**: повторный `setup` даёт тот же результат поверх существующего; бэкап — один раз на пользователя
+- **Сохранение структуры**: `tomlkit` для `config.toml` (сохраняет project trust blocks и комментарии), `PyYAML` для `moonbridge-zai.yml`
+
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Имя пакета `zai-codex-helper` (не `codex-zai-config` из issue) | Пользовательское именование; issue #1 содержит устаревшее имя | — Pending |
+| `setup` = перезапись по шаблону, не мерж | «Обнаружить и синхронизировать» неосмысленно для того, чего ещё нет; простейший честный вариант — привести к каноничному виду | — Pending |
+| Бэкап один раз на пользователя (не на каждое изменение) | Страховка пользовательских настроек; исходный пункт issue («перед каждым изменением») устарел | — Pending |
+| hatchling + `pyproject.toml` | Современный стандарт упаковки; доверенный автору выбор | — Pending |
+| TDD + 4 слоя тестов; e2e вне CI | Покрытие без хрупких живых вызовов в публичном CI | — Pending |
+| Docker только для тестов, не для пользователя | Воспроизводимость тестов; нулевая нагрузка на финального пользователя | — Pending |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
+---
+*Last updated: 2026-06-29 after initialization*
