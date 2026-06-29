@@ -207,7 +207,11 @@ Plans:
   2. When a toolchain is missing, the tool offers to install it and proceeds only after explicit user consent — it never auto-installs Go or brew
   3. macOS-only commands are gated by a platform check
 
-**Plans**: TBD
+**Plans**: 1/1 plans complete
+
+Plans:
+
+- [ ] 10-01-PLAN.md — DepResult + detect_go/detect_brew/detect_moonbridge_binary (AS vs Intel brew at runtime) + shared confirm() helper + offer_install with platform gate and never-auto-install boundary (SC-1/SC-2/SC-3, DEPS-01/DEPS-02)
 
 ### Phase 11: Moon Bridge Install (build-from-source orchestration)
 
