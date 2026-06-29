@@ -271,7 +271,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 |-------|----------------|--------|-----------|
 | 1. Project Skeleton & Packaging Foundation | 2/2 | Complete    | 2026-06-29 |
 | 2. Injectable Paths Object | 1/1 | Complete    | 2026-06-29 |
-| 3. Atomic Write Helper | 1/1 | Complete   | 2026-06-29 |
+| 3. Atomic Write Helper | 1/1 | Complete    | 2026-06-29 |
 | 4. Backup Coordinator & ConfigBackend ABC | 0/0 | Not started | - |
 | 5. TomlBackend (config.toml via tomlkit) | 0/0 | Not started | - |
 | 6. Canonical Templates & Provider Transforms | 0/0 | Not started | - |

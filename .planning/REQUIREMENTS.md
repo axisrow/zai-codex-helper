@@ -17,7 +17,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Config Patching & Safety
 
-- [ ] **CONF-01**: Atomic write для всех мутаций (temp + fsync + os.replace), `0600` для секретов
+- [x] **CONF-01**: Atomic write для всех мутаций (temp + fsync + os.replace), `0600` для секретов
 - [ ] **CONF-02**: Патч `config.toml` через tomlkit — сохраняет комментарии, порядок ключей и Codex project trust blocks на round-trip
 - [ ] **CONF-03**: Бэкап конфигов один раз на пользователя (sentinel-gated; повторный запуск не дублирует бэкап, если уже есть)
 - [ ] **CONF-04**: `restore` команда — откат к последнему бэкапу
@@ -120,7 +120,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PKG-03 | Phase 2 | Complete |
 | PKG-04 | Phase 1 | Complete |
 | PKG-05 | Phase 1 | Complete |
-| CONF-01 | Phase 3 | Pending |
+| CONF-01 | Phase 3 | Complete |
 | CONF-02 | Phase 5 | Pending |
 | CONF-03 | Phase 4 | Pending |
 | CONF-04 | Phase 4 | Pending |
