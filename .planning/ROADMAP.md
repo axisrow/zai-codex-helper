@@ -150,7 +150,10 @@ Plans:
   3. Every write is followed by a hard-to-miss restart warning telling the user the Codex Desktop App does not live-reload `config.toml`
   4. Running `use zai` twice produces byte-identical output (idempotent upsert, not append)
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 07-01-PLAN.md — Wire `use zai` / `use openai` handlers with the shared D-45 write pipeline + D-47 restart warning, pinned by on-disk integration tests for all 4 SCs (PROV-01/02/04, CONF-06)
 
 ### Phase 8: CLI `status`
 
