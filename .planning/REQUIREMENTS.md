@@ -36,7 +36,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Secrets
 
 - [ ] **SECR-01**: `ZAI_API_KEY` читается из env или вводится интерактивно (never echoed)
-- [ ] **SECR-02**: Ключ хранится в `~/.codex/moonbridge-zai.yml` с правами `0600`
+- [x] **SECR-02**: Ключ хранится в `~/.codex/moonbridge-zai.yml` с правами `0600`
 - [ ] **SECR-03**: Никаких захардкоженных ключей в пакете; ключи не логируются и не попадают в git
 
 ### Diagnostics (`doctor`)
@@ -68,7 +68,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Secondary Files
 
-- [ ] **SEC-01**: Shell helpers `codex-zai()` / `codex-openai()` в `.zshrc` (opt-in, marker-fenced `# >>> zai-codex-helper >>>` / `# <<<`, clean removal)
+- [x] **SEC-01**: Shell helpers `codex-zai()` / `codex-openai()` в `.zshrc` (opt-in, marker-fenced `# >>> zai-codex-helper >>>` / `# <<<`, clean removal)
 - [ ] **SEC-02**: `models_cache.json` update записью `glm-5.2` (silence metadata warning) — GATED на schema spike (проверить реальную схему; рассмотреть `model_catalog_json` как non-clobberable альтернативу)
 
 ### Testing & Quality
@@ -133,7 +133,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROV-04 | Phase 7 | Complete |
 | PROV-05 | Phase 8 | Complete |
 | SECR-01 | Phase 12 | Pending |
-| SECR-02 | Phase 9 | Pending |
+| SECR-02 | Phase 9 | Complete |
 | SECR-03 | Phase 15 | Pending |
 | DIAG-01 | Phase 14 | Pending |
 | DIAG-02 | Phase 14 | Pending |
@@ -150,7 +150,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SETUP-01 | Phase 12 | Pending |
 | SETUP-02 | Phase 12 | Pending |
 | SETUP-03 | Phase 12 | Pending |
-| SEC-01 | Phase 9 | Pending |
+| SEC-01 | Phase 9 | Complete |
 | SEC-02 | Phase 15 | Pending |
 | TEST-01 | Phase 15 | Pending |
 | TEST-02 | Phase 15 | Pending |
