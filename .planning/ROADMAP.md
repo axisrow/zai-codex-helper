@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Project Skeleton & Packaging Foundation** - Importable package, console-script entry point, pytest harness with tier markers and tmp-HOME fixtures (completed 2026-06-29)
 - [x] **Phase 2: Injectable Paths Object** - Frozen `Paths` dataclass so tests never touch the real `~/.codex` (completed 2026-06-29)
-- [ ] **Phase 3: Atomic Write Helper** - Crash-safe temp + fsync + os.replace writes with `0600` support for secrets
+- [x] **Phase 3: Atomic Write Helper** - Crash-safe temp + fsync + os.replace writes with `0600` support for secrets (completed 2026-06-29)
 - [ ] **Phase 4: Backup Coordinator & ConfigBackend ABC** - Once-per-user sentinel backup + the backend contract every file type implements
 - [ ] **Phase 5: TomlBackend (config.toml via tomlkit)** - Lossless round-trip patching of `config.toml` preserving comments, key order, and Codex trust blocks
 - [ ] **Phase 6: Canonical Templates & Provider Transforms** - Pure desired-state bodies + symmetric `apply_zai`/`apply_openai` transforms (Core Value logic)
@@ -82,9 +82,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. A helper writes a file via temp-in-same-dir + fsync + `os.replace`, and the destination never appears in a partial state mid-write
   2. The helper accepts a `mode` parameter so secrets are written with `0600` permissions and regular configs with the default mode
 
-**Plans**: 1 plan
+**Plans**: 1/1 plans complete
 
-- [ ] 03-01-PLAN.md — `atomic_write(path, data, mode=None)` helper (temp-in-same-dir + fsync + os.replace; mode=None preserves, mode=0o600 chmods secrets) in `backends/_atomic.py` + `@pytest.mark.unit` tests pinning SC-1 (atomic/never-partial) + SC-2 (mode param, 0600)
+- [x] 03-01-PLAN.md — `atomic_write(path, data, mode=None)` helper (temp-in-same-dir + fsync + os.replace; mode=None preserves, mode=0o600 chmods secrets) in `backends/_atomic.py` + `@pytest.mark.unit` tests pinning SC-1 (atomic/never-partial) + SC-2 (mode param, 0600)
 
 ### Phase 4: Backup Coordinator & ConfigBackend ABC
 
@@ -271,7 +271,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 |-------|----------------|--------|-----------|
 | 1. Project Skeleton & Packaging Foundation | 2/2 | Complete    | 2026-06-29 |
 | 2. Injectable Paths Object | 1/1 | Complete    | 2026-06-29 |
-| 3. Atomic Write Helper | 0/1 | Planning complete | - |
+| 3. Atomic Write Helper | 1/1 | Complete   | 2026-06-29 |
 | 4. Backup Coordinator & ConfigBackend ABC | 0/0 | Not started | - |
 | 5. TomlBackend (config.toml via tomlkit) | 0/0 | Not started | - |
 | 6. Canonical Templates & Provider Transforms | 0/0 | Not started | - |
