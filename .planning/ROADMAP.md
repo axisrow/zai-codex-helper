@@ -264,7 +264,9 @@ Plans:
   4. Post-install verification confirms the service via `launchctl print` + a port probe, not just a zero exit code
 
 **Notes**: Research flag MEDIUM — confirm Codex Desktop App config inheritance (PROJECT.md "new Terra") as a manual acceptance item, not an autotest. Validate `bootout` failure modes on Sonoma+.
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 13-01-PLAN.md — install-service / uninstall-service matched pair (services/lifecycle.py + cli handlers), shared Label, mocked-runner unit tests
 
 ### Phase 14: `doctor` (diagnostic pipeline)
 
