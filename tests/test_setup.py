@@ -424,13 +424,12 @@ def test_yes_flag_still_parsed():
 
 
 @pytest.mark.unit
-def test_doctor_remains_stub_install_uninstall_are_real():
-    """Only ``doctor`` is still a stub; install/uninstall are real handlers.
+def test_doctor_is_real_handler_install_uninstall_are_real():
+    """install/uninstall/doctor are all real handlers (no stubs remain).
 
     D-82: Phase 12 swapped ``setup``; Phase 13 (D-87) swapped
-    ``install-service``/``uninstall-service`` to real
-    ``_handle_install_service``/``_handle_uninstall_service`` handlers. Only
-    ``doctor`` stays a stub until Phase 14.
+    ``install-service``/``uninstall-service``; Phase 14 (D-89) swapped
+    ``doctor`` — the LAST Phase 1 stub. The Phase 1 stub set is now EMPTY.
     """
     # install-service / uninstall-service → real Phase 13 handlers.
     for name, expected in (
@@ -442,8 +441,8 @@ def test_doctor_remains_stub_install_uninstall_are_real():
             f"{name} should resolve to {expected}, got {args.func.__name__}"
         )
 
-    # doctor → still a stub closure (Phase 14).
+    # doctor → real Phase 14 handler (no longer a stub closure).
     args = build_parser().parse_args(["doctor"])
-    assert args.func.__name__ == "handler", (
-        f"doctor should still be a stub closure, got {args.func.__name__}"
+    assert args.func.__name__ == "_handle_doctor", (
+        f"doctor should resolve to _handle_doctor, got {args.func.__name__}"
     )

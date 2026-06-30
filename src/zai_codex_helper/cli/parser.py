@@ -42,7 +42,15 @@ is a thin shell: it resolves ``Paths.default()`` and forwards
 ``args.yes or args.no_input`` (D-79 — both flags map to headless mode) +
 ``args.dry_run``. All step logic lives in the orchestrator (D-81). A new
 ``--no-input`` root flag mirrors ``--yes`` for non-interactive automation.
-doctor / install-service / uninstall-service REMAIN stubs (their phases).
+install-service / uninstall-service / doctor REMAINED stubs until their phases.
+
+Phase 14 (D-89..D-94, DIAG-01..04): ``doctor`` is the SEVENTH real (non-stub)
+subcommand — the LAST Phase 1 stub to become real. It delegates to
+:func:`zai_codex_helper.services.doctor.run_doctor`, the READ-ONLY 9-check
+diagnostic pipeline. The Phase 1 stub set is now EMPTY: all of
+use/restore/status/setup/install-service/uninstall-service/doctor are real.
+The ``_stub`` helper is retained (tests may reference it) but the stub
+registration loop is gone.
 """
 
 import argparse
@@ -508,6 +516,43 @@ def _handle_setup(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_doctor(args: argparse.Namespace) -> int:
+    """Diagnose the Codex ⇄ Moon Bridge ⇄ Z.ai chain (Phase 14, DIAG-01..04, D-89..D-94).
+
+    The SEVENTH real (non-stub) subcommand — the LAST Phase 1 stub to become
+    real. ``zai-codex-helper doctor`` walks the chain link-by-link and prints a
+    colored verdict (``[OK]``/``[!]``/``[X]``) plus a ``To fix:`` hint for
+    every non-pass check, exiting ``0`` unless at least one check FAILS.
+    READ-ONLY (D-94): no writes, no launchctl bootstrap, no build.
+
+    Follows the D-31 restore / D-45 use-handler / D-83 install-handler shape
+    verbatim: lazy imports inside the body, resolve ``Paths.default()``,
+    delegate to :func:`zai_codex_helper.services.doctor.run_doctor`, return
+    the int exit code run_doctor returns. doctor owns its own colored output
+    and its exit code (it does NOT raise :class:`ZaiCodexHelperError`
+    per-check — it catches, marks the CheckResult, continues, and computes the
+    exit code at the end), so the handler is catch-free like
+    :func:`_handle_install_service`.
+
+    The ``runner`` / ``http_client`` / ``environ`` params are NOT forwarded —
+    they default to :func:`subprocess.run`, an internally-constructed
+    hard-timeout :class:`httpx.Client`, and ``os.environ`` inside run_doctor
+    (the seams are for unit tests only; mirrors the T-13-07 discipline).
+
+    Args:
+        args: The parsed argparse namespace (unused beyond dispatch).
+
+    Returns:
+        ``0`` if no check failed; ``1`` if any check failed. WARNs do NOT
+        fail doctor.
+    """
+    from zai_codex_helper.services.doctor import run_doctor
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.default()
+    return run_doctor(paths)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the root ``zai-codex-helper`` argparse parser.
 
@@ -588,9 +633,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # `setup` — the FOURTH real (non-stub) subcommand (Phase 12, D-76..D-82).
     # The onboarding capstone: delegates to services.setup.run_setup (the
-    # services-layer orchestrator). doctor remains a stub below (Phase 14);
-    # install-service / uninstall-service are the FIFTH/SIXTH real subcommands
-    # (Phase 13 below).
+    # services-layer orchestrator). install-service / uninstall-service are
+    # the FIFTH/SIXTH real subcommands (Phase 13 below); doctor is the SEVENTH
+    # (Phase 14 below).
     p_setup = subparsers.add_parser(
         "setup",
         help="guided end-to-end onboarding",
@@ -615,10 +660,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_uninstall.set_defaults(func=_handle_uninstall_service)
 
-    # Only `doctor` remains a stub — Phase 14 (D-55/D-82: setup is no longer a
-    # stub; install-service/uninstall-service are real as of Phase 13 above).
-    for name in ("doctor",):
-        sp = subparsers.add_parser(name, help=f"{name} (stub)")
-        sp.set_defaults(func=_stub(name))
+    # `doctor` — the SEVENTH real (non-stub) subcommand (Phase 14,
+    # D-89..D-94; DIAG-01..04). The LAST Phase 1 stub to become real: the
+    # Phase 1 stub set is now EMPTY. READ-ONLY 9-check diagnostic; the handler
+    # is a thin shell (lazy imports, Paths.default(), delegate); the
+    # runner/http_client/environ seams are NOT forwarded (production uses the
+    # real subprocess.run + an internally-constructed httpx.Client).
+    p_doctor = subparsers.add_parser(
+        "doctor",
+        help="diagnose the Codex ⇄ Moon Bridge ⇄ Z.ai chain",
+    )
+    p_doctor.set_defaults(func=_handle_doctor)
 
     return parser
