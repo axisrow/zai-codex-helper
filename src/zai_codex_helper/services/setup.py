@@ -282,11 +282,7 @@ def run_setup(
         import tomlkit
 
         backend = TomlBackend(paths)
-        doc = (
-            backend.read()
-            if backend.exists()
-            else tomlkit.document()
-        )
+        doc = backend.read() if backend.exists() else tomlkit.document()
         doc = transform(doc)
         print_fn(compute_diff(paths.config_toml, tomlkit.dumps(doc)))
     else:

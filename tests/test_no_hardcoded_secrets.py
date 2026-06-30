@@ -79,7 +79,9 @@ def test_no_hardcoded_api_key_in_src():
         text = py.read_text(encoding="utf-8")
         for lineno, line in enumerate(text.splitlines(), start=1):
             if _SK_PATTERN.search(line):
-                offenders.append(f"{py.relative_to(_REPO_ROOT)}:{lineno}: sk- literal: {line.strip()!r}")
+                offenders.append(
+                    f"{py.relative_to(_REPO_ROOT)}:{lineno}: sk- literal: {line.strip()!r}"
+                )
             if _ZAI_KEY_ASSIGN_PATTERN.search(line):
                 offenders.append(
                     f"{py.relative_to(_REPO_ROOT)}:{lineno}: ZAI_API_KEY assignment: {line.strip()!r}"
@@ -202,16 +204,18 @@ def test_pre_commit_hook_exits_1_on_staged_canary(tmp_path):
     # Initialize a throwaway git repo and stage the canary so the hook's
     # ``git diff --cached --name-only`` lists it.
     subprocess.run(
-        ["git", "init", "-q"], cwd=tmp_path, check=True,
+        ["git", "init", "-q"],
+        cwd=tmp_path,
+        check=True,
     )
     subprocess.run(
-        ["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True,
+        ["git", "config", "user.email", "t@t"],
+        cwd=tmp_path,
+        check=True,
     )
     subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "leaked.py"], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True
-    )
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
     # Stage the canary a second time with the secret present so it appears in
     # --cached (the commit above already consumed the first add).
     canary.write_text(

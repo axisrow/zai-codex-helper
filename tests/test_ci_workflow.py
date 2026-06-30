@@ -107,9 +107,7 @@ def test_ci_has_wheel_install_help_and_pytest_not_e2e_steps():
         "ci.yml uses editable install 'pip install -e .' — D-97 mandates the "
         "built wheel (pip install dist/*.whl)"
     )
-    assert "zai-codex-helper --help" in joined, (
-        "missing 'zai-codex-helper --help' step"
-    )
+    assert "zai-codex-helper --help" in joined, "missing 'zai-codex-helper --help' step"
     assert 'pytest -m "not e2e"' in joined, (
         "missing 'pytest -m \"not e2e\"' step (the TEST-05 gate)"
     )
@@ -124,9 +122,7 @@ def test_ci_help_runs_before_dev_deps():
     --help, the wheel would be broken for a real pip install.
     """
     commands = _run_commands(_load_ci())
-    help_idx = next(
-        i for i, c in enumerate(commands) if "zai-codex-helper --help" in c
-    )
+    help_idx = next(i for i, c in enumerate(commands) if "zai-codex-helper --help" in c)
     dev_idx = next(
         i for i, c in enumerate(commands) if ".[dev]" in c or '".[dev]"' in c
     )
@@ -174,6 +170,6 @@ def test_ci_does_not_run_e2e():
             assert "not e2e" in cmd, (
                 f"ci.yml pytest step lacks the '-m \"not e2e\"' gate: {cmd!r}"
             )
-            assert "-m e2e" not in cmd.replace(
-                'not e2e', ''
-            ), f"ci.yml runs e2e explicitly: {cmd!r}"
+            assert "-m e2e" not in cmd.replace("not e2e", ""), (
+                f"ci.yml runs e2e explicitly: {cmd!r}"
+            )

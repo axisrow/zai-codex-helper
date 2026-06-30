@@ -36,16 +36,14 @@ proof (CONF-07).
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
-import yaml
 
 from zai_codex_helper.__main__ import main
 from zai_codex_helper.services.lifecycle import install_service
 from zai_codex_helper.services.paths import Paths
-from zai_codex_helper.services.setup import run_setup, SHELL_HELPERS_BODY
+from zai_codex_helper.services.setup import run_setup
 
 # --------------------------------------------------------------------------- #
 # Realistic config.toml seeds (mirror tests/test_use_zai_use_openai.py fixtures
@@ -279,9 +277,7 @@ def test_install_service_dry_run_summary_no_plist_no_launchctl(tmp_path, capsys)
 
         return CompletedProcess(argv, 0, stdout="", stderr="")
 
-    with mock.patch(
-        "zai_codex_helper.services.lifecycle.sys.platform", "darwin"
-    ):
+    with mock.patch("zai_codex_helper.services.lifecycle.sys.platform", "darwin"):
         rc = install_service(paths, runner=spy_runner, dry_run=True)
 
     assert rc == 0
