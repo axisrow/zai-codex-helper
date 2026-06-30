@@ -141,6 +141,26 @@ class ShellBackend(ConfigBackend):
         """Return ``True`` iff ``.zshrc`` exists on disk."""
         return self._path.exists()
 
+    @staticmethod
+    def render_fence(content: str) -> str:
+        """Return the fenced-block string for ``content`` WITHOUT writing (D-95).
+
+        Phase 15 read-only helper: builds the EXACT fence
+        :meth:`write_canonical` would insert — ``MARKER_START`` + ``content``
+        + ``MARKER_END``, each on its own line — but returns it instead of
+        writing. This is the single source of truth for the fence shape so the
+        ``--dry-run`` diff preview (:mod:`zai_codex_helper.services.diff_preview`)
+        computes a target byte-identical to what a real write would produce
+        (CONF-07 — the preview must match the real write).
+
+        Args:
+            content: The block body (shell helper text) WITHOUT the markers.
+
+        Returns:
+            The fence string ``"{MARKER_START}\\n{content}\\n{MARKER_END}"``.
+        """
+        return f"{MARKER_START}\n{content}\n{MARKER_END}"
+
     def write_canonical(self, content: str, mode: int | None = 0o644) -> None:
         """Write ``content`` into the fenced block, idempotently (D-57, D-60).
 
@@ -184,7 +204,9 @@ class ShellBackend(ConfigBackend):
                 and is not a security regression — ``0600`` is more
                 restrictive, not less). Pass an explicit mode to override.
         """
-        fence = f"{MARKER_START}\n{content}\n{MARKER_END}"
+        # D-95: the fence shape lives in render_fence (single source of truth)
+        # so the dry-run preview computes a byte-identical target.
+        fence = self.render_fence(content)
         text = self.read()
 
         if MARKER_START in text and MARKER_END in text:

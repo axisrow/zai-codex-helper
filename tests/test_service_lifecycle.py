@@ -621,7 +621,9 @@ def test_handle_install_service_delegates_to_services_layer(tmp_path, monkeypatc
         rc = args.func(args)
 
     assert rc == 0
-    spy.assert_called_once_with(fake_paths)
+    # Phase 15 (D-95): the handler now forwards the root --dry-run flag.
+    # Default (no --dry-run) -> dry_run=False, preserving the prior behavior.
+    spy.assert_called_once_with(fake_paths, dry_run=False)
 
 
 @pytest.mark.unit

@@ -111,7 +111,7 @@ def _emit_restart_warning(stream) -> None:
     )
 
 
-def _apply_provider_pipeline(transform, warn_stream) -> None:
+def _apply_provider_pipeline(transform, warn_stream, *, dry_run: bool = False) -> None:
     """Run the D-45 end-to-end write pipeline against the REAL ``config.toml``.
 
     This is the single write path both ``use`` handlers delegate to (D-45 —
@@ -155,18 +155,34 @@ def _apply_provider_pipeline(transform, warn_stream) -> None:
     :class:`ZaiCodexHelperError` to :func:`main`, which formats it one-line on
     stderr + exit 1 (and re-raises under ``--debug``).
 
+    Phase 15 dry-run branch (CONF-07, D-95): when ``dry_run`` is True the
+    pipeline runs steps a-f (paths, backend, seed-if-missing, backup_once is
+    STILL a write so it is SKIPPED, read, transform) but STOPS before step g
+    ``write_canonical``. It serializes the transformed doc via
+    ``tomlkit.dumps(doc)``, computes a real unified diff against the current
+    ``config.toml`` via :func:`zai_codex_helper.services.diff_preview.compute_diff`,
+    prints it to ``warn_stream``, and returns WITHOUT writing — steps g
+    (write), h (postcondition check — no write to validate against), and i
+    (restart warning — no real write happened) are all skipped. The
+    backup_once is skipped because it is itself a mutating call (a one-shot
+    ``.bak`` write); the dry-run prints "would back up config.toml" instead.
+
     Args:
         transform: A pure transform callable (``apply_zai`` or
             ``apply_openai``) taking a ``tomlkit.TOMLDocument`` and returning
             the same mutated object.
         warn_stream: The stream the restart warning is written to (the caller
-            passes ``sys.stderr`` — D-47).
+            passes ``sys.stderr`` — D-47). Under ``dry_run`` the diff preview
+            is also routed here so a piped stdout is not polluted.
+        dry_run: Phase 15 (D-95). When True, preview the would-be
+            ``config.toml`` change as a unified diff and write NOTHING.
     """
     # Lazy imports keep `parser.py` import-light and side-effect-free at
     # module load (mirrors `_handle_restore`'s lazy-import discipline).
     import tomlkit
 
     from zai_codex_helper.backends.toml import TomlBackend
+    from zai_codex_helper.services.diff_preview import compute_diff
     from zai_codex_helper.services.paths import Paths
     from zai_codex_helper.services.providers import check_postconditions
 
@@ -186,13 +202,31 @@ def _apply_provider_pipeline(transform, warn_stream) -> None:
         backend.write_canonical(tomlkit.document())
 
     # d. One-shot .bak (D-45 step 2). Sentinel-gated: no-op after the first
-    #    run, so calling it every time is safe and idempotent.
-    backend.backup_once()
+    #    run, so calling it every time is safe and idempotent. DRY-RUN: this
+    #    is itself a mutating call (a one-shot .bak write), so SKIP it under
+    #    dry_run and surface the would-do intent instead (CONF-07 — the dry-run
+    #    must not mutate ANY file, including the backup).
+    if dry_run:
+        print("would back up config.toml (one-shot .bak)", file=warn_stream)
+    else:
+        backend.backup_once()
 
     # e. Read the (now-existing) config into a live, style-preserving doc.
     doc = backend.read()
     # f. Apply the pure desired-state transform (apply_zai / apply_openai).
     doc = transform(doc)
+
+    # D-95 dry-run branch: compute the would-be config.toml diff and print it,
+    # then STOP — no write, no postcondition check (nothing to validate
+    # against), no restart warning (no real write happened). The serialized
+    # target MUST match what write_canonical would produce byte-for-byte so
+    # the preview is faithful; tomlkit.dumps(doc) is exactly that.
+    if dry_run:
+        target_text = tomlkit.dumps(doc)
+        diff = compute_diff(paths.config_toml, target_text)
+        print(diff, file=warn_stream)
+        return
+
     # g. Atomic, crash-safe write (Phase 3 via Phase 5).
     backend.write_canonical(doc)
     # h. Post-condition check (Phase 6). Run AFTER the write so it validates
@@ -229,7 +263,9 @@ def _handle_use_zai(args: argparse.Namespace) -> int:
     # parser.py stays import-light at module load).
     from zai_codex_helper.services.providers import apply_zai
 
-    _apply_provider_pipeline(apply_zai, sys.stderr)
+    # Phase 15 (D-95): forward the root --dry-run flag so `use zai --dry-run`
+    # previews the would-be config.toml change as a diff and writes nothing.
+    _apply_provider_pipeline(apply_zai, sys.stderr, dry_run=args.dry_run)
     return 0
 
 
@@ -256,7 +292,9 @@ def _handle_use_openai(args: argparse.Namespace) -> int:
     """
     from zai_codex_helper.services.providers import apply_openai
 
-    _apply_provider_pipeline(apply_openai, sys.stderr)
+    # Phase 15 (D-95): forward the root --dry-run flag so `use openai --dry-run`
+    # previews the would-be config.toml change as a diff and writes nothing.
+    _apply_provider_pipeline(apply_openai, sys.stderr, dry_run=args.dry_run)
     return 0
 
 
@@ -439,7 +477,10 @@ def _handle_install_service(args: argparse.Namespace) -> int:
     from zai_codex_helper.services.paths import Paths
 
     paths = Paths.default()
-    return install_service(paths)
+    # Phase 15 (D-95): forward the root --dry-run flag so
+    # `install-service --dry-run` prints a "would write plist + bootstrap"
+    # summary and writes/calls nothing.
+    return install_service(paths, dry_run=args.dry_run)
 
 
 def _handle_uninstall_service(args: argparse.Namespace) -> int:

@@ -171,7 +171,12 @@ def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
     return any(p in lowered for p in patterns)
 
 
-def install_service(paths: Paths, *, runner: Runner = subprocess.run) -> int:
+def install_service(
+    paths: Paths,
+    *,
+    runner: Runner = subprocess.run,
+    dry_run: bool = False,
+) -> int:
     """Install the Moon Bridge LaunchAgent (D-83; SERV-01).
 
     The matched-install half of the lifecycle pair. Writes the canonical plist
@@ -195,6 +200,16 @@ def install_service(paths: Paths, *, runner: Runner = subprocess.run) -> int:
          bootstrap exit 0 alone is insufficient). Loaded + port-closed →
          WARNING to stderr, exit 0.
 
+    Phase 15 dry-run branch (CONF-07, D-95 NOTE): when ``dry_run`` is True,
+    step 1 (platform gate) STILL runs (a non-darwin dry-run is still an
+    error — the command is meaningless off-platform), but steps 2-4 are
+    replaced by a SUMMARY printed to stdout: "would write plist to <path>",
+    "would run: launchctl bootstrap gui/<UID> <plist>", "would verify via
+    launchctl print + port probe". The plist is NOT written and ``runner`` is
+    NEVER called (no launchctl). D-95 NOTE explicitly allows install-service
+    summary depth (a full plist XML diff is not required; the summary conveys
+    the would-do intent).
+
     Args:
         paths: The injected :class:`Paths` bundle (D-22). The plist lands at
             ``paths.launchagents_dir / "dev.zai.moonbridge.plist"`` — never a
@@ -202,17 +217,35 @@ def install_service(paths: Paths, *, runner: Runner = subprocess.run) -> int:
         runner: The ONLY subprocess seam (D-83). Defaults to
             :func:`subprocess.run`; unit tests inject a recording fake so NO
             real ``launchctl`` runs. Production handlers in ``cli/parser.py``
-            do NOT forward a runner (threat T-13-07).
+            do NOT forward a runner (threat T-13-07). NEVER called under
+            ``dry_run``.
+        dry_run: Phase 15 (D-95). When True, print a "would write plist +
+            bootstrap + verify" summary and return 0 WITHOUT writing the plist
+            or calling ``runner``/launchctl.
 
     Returns:
-        0 on success (the agent is registered AND verified loaded).
+        0 on success (the agent is registered AND verified loaded), or 0 after
+        printing the dry-run summary when ``dry_run`` is True.
 
     Raises:
-        ZaiCodexHelperError: on non-darwin (platform gate), a real bootstrap
-            failure (rc != 0 + non-already-loaded stderr), or verify-not-loaded.
+        ZaiCodexHelperError: on non-darwin (platform gate — raised even under
+            ``dry_run``), a real bootstrap failure (rc != 0 + non-already-loaded
+            stderr), or verify-not-loaded.
     """
-    # 1. Platform gate (D-83 step 1, D-88).
+    # 1. Platform gate (D-83 step 1, D-88). Runs even under dry_run: the
+    #    service commands are macOS-only, so a non-darwin dry-run is still an
+    #    actionable error rather than a meaningless summary.
     _gate_darwin()
+
+    # D-95 dry-run branch: print a summary and return 0 WITHOUT writing the
+    # plist or calling runner/launchctl. D-95 NOTE allows install-service
+    # summary depth (no full plist XML diff required).
+    if dry_run:
+        plist_path = _plist_path(paths)
+        print(f"would write plist to {plist_path}")
+        print(f"would run: launchctl bootstrap gui/{os.getuid()} {plist_path}")
+        print("would verify via launchctl print + port probe (127.0.0.1:38440)")
+        return 0
 
     # 2. Write the canonical plist (Phase 9 reuse — do NOT re-derive). The
     #    backend atomically writes the FULL canonical dict with absolute paths
