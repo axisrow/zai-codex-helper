@@ -398,6 +398,73 @@ def _handle_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_install_service(args: argparse.Namespace) -> int:
+    """Install the Moon Bridge LaunchAgent (Phase 13, SERV-01/SERV-04, D-83/D-86).
+
+    Autonomous (no prompt). Writes the canonical plist
+    (KeepAlive/RunAtLoad/absolute binary path via Phase 9's
+    :class:`PlistBackend`), runs ``launchctl bootstrap gui/<UID> <plist>``, and
+    verifies the agent is actually loaded + listening (SERV-04 — bootstrap exit
+    0 alone is insufficient). Replaces the Phase 1 ``_stub("install-service")``
+    wiring (D-02).
+
+    Follows the D-31 restore / D-45 use-handler / D-76 setup-handler shape
+    verbatim: lazy imports inside the body, resolve ``Paths.default()``,
+    delegate to :func:`zai_codex_helper.services.lifecycle.install_service`,
+    return the int. Does NOT catch :class:`ZaiCodexHelperError` (D-11 — owned
+    by :func:`zai_codex_helper.__main__.main`), does NOT call ``sys.exit``.
+
+    The ``runner`` param is NOT forwarded — it defaults to
+    :func:`subprocess.run` inside ``install_service`` (the seam is for unit
+    tests only; threat T-13-07). A non-zero exit / :class:`ZaiCodexHelperError`
+    (platform gate on non-darwin, real bootstrap failure, verify-not-loaded)
+    propagates to :func:`main` per D-11.
+
+    Args:
+        args: The parsed argparse namespace (unused beyond dispatch).
+
+    Returns:
+        0 on success (the agent is registered AND verified loaded; a loaded-
+        but-not-listening state is a WARNING, still exit 0 — SERV-04).
+    """
+    from zai_codex_helper.services.lifecycle import install_service
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.default()
+    return install_service(paths)
+
+
+def _handle_uninstall_service(args: argparse.Namespace) -> int:
+    """Uninstall the Moon Bridge LaunchAgent (Phase 13, SERV-02/SERV-03, D-84/D-85).
+
+    Autonomous (no prompt). Runs ``launchctl bootout gui/<UID>/<LABEL>`` (the
+    SAME shared Label install bootstrapped — D-85, never an orphan) and removes
+    the plist. Idempotent: running uninstall twice (or after a manual
+    ``bootout``) exits 0 because both the already-booted-out condition (EIO rc
+    36 / "Could not find service") and the missing-plist condition are
+    swallowed. A REAL failure (e.g. "Operation not permitted") raises. Replaces
+    the Phase 1 ``_stub("uninstall-service")`` wiring (D-02).
+
+    Follows the D-31 / D-45 / D-76 handler shape verbatim: lazy imports,
+    ``Paths.default()``, delegate to
+    :func:`zai_codex_helper.services.lifecycle.uninstall_service`, return the
+    int. Does NOT catch :class:`ZaiCodexHelperError` (D-11), does NOT call
+    ``sys.exit``. The ``runner`` param is NOT forwarded (the seam is for unit
+    tests only; threat T-13-07).
+
+    Args:
+        args: The parsed argparse namespace (unused beyond dispatch).
+
+    Returns:
+        0 on success (the agent is de-registered AND the plist removed).
+    """
+    from zai_codex_helper.services.lifecycle import uninstall_service
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.default()
+    return uninstall_service(paths)
+
+
 def _handle_setup(args: argparse.Namespace) -> int:
     """Run the guided end-to-end onboarding (D-76..D-82, SETUP-01/02/03).
 
@@ -521,18 +588,36 @@ def build_parser() -> argparse.ArgumentParser:
 
     # `setup` — the FOURTH real (non-stub) subcommand (Phase 12, D-76..D-82).
     # The onboarding capstone: delegates to services.setup.run_setup (the
-    # services-layer orchestrator). doctor / install-service / uninstall-service
-    # remain stubs below (their phases).
+    # services-layer orchestrator). doctor remains a stub below (Phase 14);
+    # install-service / uninstall-service are the FIFTH/SIXTH real subcommands
+    # (Phase 13 below).
     p_setup = subparsers.add_parser(
         "setup",
         help="guided end-to-end onboarding",
     )
     p_setup.set_defaults(func=_handle_setup)
 
-    # The remaining 3 top-level commands — each a stub until its phase arrives
-    # (D-55/D-82: setup is no longer a stub; doctor/install-service/
-    # uninstall-service belong to later phases 13/14).
-    for name in ("doctor", "install-service", "uninstall-service"):
+    # `install-service` / `uninstall-service` — the FIFTH/SIXTH real (non-stub)
+    # subcommands (Phase 13, D-83..D-88; SERV-01..04). The LaunchAgent lifecycle
+    # pair: install writes the plist + bootstraps the agent (+ verifies loaded +
+    # listening); uninstall bootouts the agent + removes the plist. Both share
+    # ONE Label constant imported from PlistBackend (D-85 — no orphan). The
+    # handlers are thin shells (lazy imports, Paths.default(), delegate); the
+    # runner seam is NOT forwarded (production uses the real launchctl).
+    p_install = subparsers.add_parser(
+        "install-service",
+        help="install the Moon Bridge LaunchAgent",
+    )
+    p_install.set_defaults(func=_handle_install_service)
+    p_uninstall = subparsers.add_parser(
+        "uninstall-service",
+        help="uninstall the Moon Bridge LaunchAgent",
+    )
+    p_uninstall.set_defaults(func=_handle_uninstall_service)
+
+    # Only `doctor` remains a stub — Phase 14 (D-55/D-82: setup is no longer a
+    # stub; install-service/uninstall-service are real as of Phase 13 above).
+    for name in ("doctor",):
         sp = subparsers.add_parser(name, help=f"{name} (stub)")
         sp.set_defaults(func=_stub(name))
 
