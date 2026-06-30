@@ -55,9 +55,10 @@ DECISIONS HONORED (D-76..D-82 — every one load-bearing):
   / ``environ`` / ``print_fn`` so tests run ZERO real IO (no stdin, no real
   subprocess, no real env). ``getpass`` comes from stdlib.
 - **D-82 (scope discipline):** NO launchctl / plist (Phase 13); NO ``doctor``
-  (Phase 14); NO ``models_cache`` entry (Phase 15); NO auto-install of Go /
-  brew (``build_moonbridge`` surfaces the brew one-liner as MESSAGE TEXT only);
-  NEVER echo / log the API key (SECR-03).
+  (Phase 14); NO auto-install of Go / brew (``build_moonbridge`` surfaces the
+  brew one-liner as MESSAGE TEXT only); NEVER echo / log the API key (SECR-03).
+  (Phase 15 adds the ``models_cache`` glm-5.2 entry as STEP 6.5 — D-98 / SC-4;
+  it is wired INTO setup, NOT a new CLI command per D-100.)
 """
 
 from __future__ import annotations
@@ -73,6 +74,10 @@ from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.diff_preview import compute_diff, redact_secrets
 from zai_codex_helper.services.io import confirm
+from zai_codex_helper.services.models_cache import (
+    compute_glm52_merged_text,
+    update_models_cache,
+)
 from zai_codex_helper.services.moonbridge import build_moonbridge
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.providers import (
@@ -289,6 +294,27 @@ def run_setup(
         _apply_provider_inline(paths, transform)
 
     # ------------------------------------------------------------------ #
+    # STEP 6.5 (D-98, SC-4 — models_cache.json glm-5.2 entry).
+    # ------------------------------------------------------------------ #
+    # Phase 15: write the glm-5.2 entry into models_cache.json so Codex stops
+    # emitting the "missing model metadata" warning for the Z.ai model. The
+    # update is list-aware (merge_model_list, Task 1): it replace-by-slug /
+    # append-new, preserving every existing entry (the user's 5 models survive).
+    # In dry-run, compute the would-be file text WITHOUT writing and emit a
+    # diff via Plan 01's compute_diff (the cross-plan dependency).
+    if dry_run:
+        # D-95 / D-98: preview the would-be models_cache.json as a REAL diff.
+        # compute_glm52_merged_text is PURE (read-only) — it mirrors
+        # write_canonical's merge in-memory and serializes with the same
+        # json.dumps(indent=2) args, so the preview matches the real write.
+        print_fn(compute_diff(paths.models_cache, compute_glm52_merged_text(paths)))
+    else:
+        # Idempotent by composition (merge_model_list replace-by-slug). The
+        # top-level provenance keys (fetched_at/etag/client_version) are
+        # preserved byte-identical (deep_merge handles them).
+        update_models_cache(paths)
+
+    # ------------------------------------------------------------------ #
     # STEP 7 (D-78 — LaunchAgent OFFER ONLY).
     # ------------------------------------------------------------------ #
     if yes:
@@ -313,6 +339,10 @@ def run_setup(
         print_fn("Moon Bridge: built (or already present).")
     if shell_consent and not dry_run:
         print_fn("Shell helpers added to .zshrc.")
+    if dry_run:
+        print_fn("models_cache.json: (dry-run) glm-5.2 entry previewed above.")
+    else:
+        print_fn("models_cache.json: glm-5.2 entry added/refreshed.")
     if launch_consent:
         print_fn("LaunchAgent: run install-service to enable auto-start.")
     return 0
