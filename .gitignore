@@ -216,3 +216,28 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# Phase 15 — secrets defense-in-depth (SECR-03, D-96)
+# ---------------------------------------------------------------------------
+# Defense layer 1: ensure user secrets files can NEVER land in the repo, even
+# via `git add -f` (the pre-commit grep hook is layer 2). Only the SECRETS
+# files are ignored — `.codex/` itself is NOT (a future fixture may legitimately
+# live under a test sandbox; only the secrets-bearing yml is sensitive).
+
+# Wildcard env-file catch (the existing `.env`/`.envrc`/`.venv` entries cover
+# the common names; `*.env` catches `prod.env`, `secrets.env`, etc.).
+*.env
+
+# Codex / OpenAI auth files (never check these in).
+auth.json
+
+# The Moon Bridge secrets file (holds ZAI_API_KEY) — both the canonical path
+# and a bare-name catch in case it lands in a test sandbox root.
+.codex/moonbridge-zai.yml
+moonbridge-zai.yml
+
+# One-shot backups produced by zai-codex-helper (config.toml.zai-codex-helper.bak
+# etc.) — never check these in; they may contain pre-rotation state.
+*.bak
+

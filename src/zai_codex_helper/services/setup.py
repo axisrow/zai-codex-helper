@@ -71,6 +71,7 @@ from zai_codex_helper.backends.shell import ShellBackend
 from zai_codex_helper.backends.toml import TomlBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
+from zai_codex_helper.services.diff_preview import compute_diff, redact_secrets
 from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.moonbridge import build_moonbridge
 from zai_codex_helper.services.paths import Paths
@@ -206,7 +207,22 @@ def run_setup(
         "server": {"host": _MB_HOST, "port": _MB_PORT},
     }
     if dry_run:
-        print_fn("would write moonbridge-zai.yml")
+        # D-95: preview the would-be moonbridge-zai.yml as a REAL diff. The
+        # serialized target MUST be REDACTED first (D-77 / SECR-03 / T-15-01)
+        # — the API key value NEVER enters print_fn. redact_secrets() rewrites
+        # the ZAI_API_KEY line to "<redacted>" before compute_diff, so the diff
+        # the user sees exposes the model/server changes without leaking the
+        # secret. serialize with the SAME safe_dump args YamlBackend uses so
+        # the preview matches what a real write would produce byte-for-byte.
+        import yaml
+
+        serialized = yaml.safe_dump(
+            yml_body,
+            sort_keys=False,
+            default_flow_style=False,
+            allow_unicode=True,
+        )
+        print_fn(compute_diff(paths.moonbridge_yml, redact_secrets(serialized)))
     else:
         # D-56: the backend's default mode=0o600 is LOAD-BEARING — pass NO
         # override (SECR-02 / CLAUDE.md "File Permissions").
@@ -234,7 +250,14 @@ def run_setup(
         shell_consent = confirm_fn("Add shell helpers to .zshrc?")
     if shell_consent:
         if dry_run:
-            print_fn("would write shell helpers")
+            # D-95: preview the would-be .zshrc change as a REAL diff. The
+            # target is the fenced block ShellBackend.write_canonical WOULD
+            # insert — render_fence() is the single source of truth for the
+            # fence shape so the preview matches the real write byte-for-byte.
+            # (.zshrc holds no secret — no redaction needed; only the yml
+            # preview redacts.)
+            target = ShellBackend.render_fence(SHELL_HELPERS_BODY)
+            print_fn(compute_diff(paths.zshrc, target))
         else:
             # ShellBackend.write_canonical upserts the marker-fenced block
             # replace-not-append (D-57) → exactly one fence, idempotent.
@@ -249,7 +272,23 @@ def run_setup(
     # read → apply_zai/apply_openai → write_canonical → check_postconditions.
     transform = apply_zai if provider == "zai" else apply_openai
     if dry_run:
-        print_fn(f"would apply provider {provider}")
+        # D-95: preview the would-be config.toml change as a REAL diff. Mirrors
+        # _apply_provider_pipeline's dry-run branch: seed-if-missing (read-only
+        # existence check; NO write — a dry-run must not even seed), read,
+        # transform, tomlkit.dumps(doc), compute_diff. backup_once is SKIPPED
+        # (it is a mutating one-shot .bak write). The serialized target matches
+        # what write_canonical would produce, so the preview is faithful. NO
+        # postcondition check (nothing written to validate against).
+        import tomlkit
+
+        backend = TomlBackend(paths)
+        doc = (
+            backend.read()
+            if backend.exists()
+            else tomlkit.document()
+        )
+        doc = transform(doc)
+        print_fn(compute_diff(paths.config_toml, tomlkit.dumps(doc)))
     else:
         _apply_provider_inline(paths, transform)
 
