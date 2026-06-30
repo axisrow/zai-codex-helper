@@ -244,7 +244,11 @@ Plans:
   2. The same flow runs non-interactively via `--yes`/`--no-input` through a single shared `confirm()` helper
   3. Running `setup` twice over an existing install yields identical output (idempotent canonical overwrite, not append)
 
-**Plans**: TBD
+**Plans**: 1/1 plans complete
+
+Plans:
+
+- [ ] 12-01-PLAN.md — `setup` onboarding orchestrator (D-76..D-82): `services/setup.py` run_setup composing YamlBackend+build_moonbridge+ShellBackend+provider pipeline behind injected seams, `_handle_setup` CLI handler + `--no-input` flag, and tests/test_setup.py pinning SC-1/SC-2/SC-3 + SECR-03 no-leak + D-78 no-launchctl + D-79 env-required (SETUP-01/02/03, SECR-01/03)
 
 ### Phase 13: Service Lifecycle (`install-service` / `uninstall-service`)
 
