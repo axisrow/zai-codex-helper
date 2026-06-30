@@ -1,0 +1,24 @@
+# Phase 15 — pre-commit configuration (SECR-03, D-96, SC-2 defense layer 2).
+#
+# Wires the grep-based secret-scan hook (scripts/pre-commit-secret-scan.sh) as a
+# local repo hook. No external hook repo is required — the hook is a bash+grep
+# script that lives in this repo, so `pre-commit install` works offline and adds
+# no supply-chain dependency (D-96: keep it grep-based, no external tool).
+#
+# To enable:
+#   pip install pre-commit     # if not already installed
+#   pre-commit install         # wires .git/hooks/pre-commit
+#   pre-commit run --all-files # run manually across the whole tree
+#
+# The hook reads staged files itself (pass_filenames: false) so it can report
+# the offending file + line number precisely.
+
+repos:
+  - repo: local
+    hooks:
+      - id: zai-secret-scan
+        name: zai-codex-helper secret scan (grep-based, no external tool)
+        entry: bash scripts/pre-commit-secret-scan.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
