@@ -266,3 +266,167 @@ def test_merge_model_list_rejects_non_list_override():
     argument."""
     with pytest.raises(TypeError, match="override_entries"):
         merge_model_list([], "not a list")  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------- #
+# Task 2 — update_models_cache + run_setup wiring (Tests 7-10)
+# --------------------------------------------------------------------------- #
+# These tests exercise the REAL services.models_cache module (GLM_52_ENTRY +
+# update_models_cache + compute_glm52_merged_text) and the setup wiring. They
+# import lazily INSIDE the test functions so that a collection-time import error
+# in services.models_cache does not break the Task-1 tests above (defense in
+# depth — keeps the merge-logic tests runnable even if the service module has
+# an issue).
+
+
+def _import_service():
+    """Import the services.models_cache module lazily (Task 2 dependency).
+
+    Imported inside the test functions so the Task-1 tests (which only need
+    the backend) run even if this module has a collection-time issue.
+    """
+    from zai_codex_helper.services import models_cache
+
+    return models_cache
+
+
+@pytest.mark.unit
+def test_update_models_cache_preserves_and_adds_glm52(tmp_path):
+    """Test 7 (D-98, SC-4): seed 5 models (no glm-5.2); call
+    ``update_models_cache(paths)``; re-read; assert 6 models (5 originals +
+    glm-5.2), glm-5.2 present, the 5 originals survive. The REAL
+    ``GLM_52_ENTRY`` (from services.models_cache) is the entry written."""
+    models_cache = _import_service()
+    paths = Paths.from_home(tmp_path)
+    _seed_cache(paths)
+
+    models_cache.update_models_cache(paths)
+
+    result = JsonBackend(paths).read()
+    slugs = [m["slug"] for m in result["models"]]
+    # The 5 REAL seed slugs survive (the load-bearing non-clobbering property).
+    assert set(_SEED_SLUGS).issubset(set(slugs))
+    # glm-5.2 was added.
+    assert "glm-5.2" in slugs
+    assert len(result["models"]) == 6
+    # The glm-5.2 entry has the documented default_reasoning_level (xhigh —
+    # the helper's Core Value default).
+    glm = next(m for m in result["models"] if m["slug"] == "glm-5.2")
+    assert glm["display_name"] == "GLM-5.2"
+    assert glm["default_reasoning_level"] == "xhigh"
+
+
+@pytest.mark.unit
+def test_update_models_cache_idempotent_on_double_call(tmp_path):
+    """Test 8 (SC-4 idempotence): call ``update_models_cache(paths)`` TWICE on
+    the same seed; assert BYTE-IDENTICAL output after the 2nd call AND exactly
+    ONE glm-5.2 entry (the merge replaces-by-slug, not appends-on-repeat)."""
+    models_cache = _import_service()
+    paths = Paths.from_home(tmp_path)
+    _seed_cache(paths)
+
+    models_cache.update_models_cache(paths)
+    snapshot = paths.models_cache.read_bytes()
+
+    models_cache.update_models_cache(paths)
+    after_second = paths.models_cache.read_bytes()
+
+    # Byte-level idempotence — the strictest proof (key order + whitespace).
+    assert after_second == snapshot
+    # Exactly ONE glm-5.2 entry (replace, not append, on the 2nd call).
+    result = json.loads(after_second)
+    glm_count = sum(1 for m in result["models"] if m.get("slug") == "glm-5.2")
+    assert glm_count == 1
+    # The 5 originals STILL survive after the double-call.
+    slugs = [m["slug"] for m in result["models"]]
+    assert set(_SEED_SLUGS).issubset(set(slugs))
+
+
+@pytest.mark.integration
+def test_setup_wires_models_cache_step(tmp_path, monkeypatch):
+    """Test 9 (D-98 setup-integration): invoke ``run_setup(paths, yes=True)``
+    with a pre-created Moon Bridge binary (so build skips) and a SEEDED
+    models_cache.json (the 5-model fixture); assert after setup, paths.models_cache
+    has the glm-5.2 entry AND the user's 5 pre-existing entries survive. Proves
+    the new STEP 6.5 fires inside the real orchestrator without disrupting the
+    Phase 12 flow."""
+    import os
+    import stat
+
+    models_cache = _import_service()
+    # Pre-create the Moon Bridge binary so build_moonbridge's idempotency skip
+    # fires before any subprocess (mirrors tests/test_setup.py::_precreate_binary).
+    binary = tmp_path / ".codex" / "moon-bridge"
+    binary.write_bytes(b"#!/bin/sh\nexit 0\n")
+    os.chmod(binary, 0o755)
+    assert binary.stat().st_mode & stat.S_IXUSR
+
+    paths = Paths.from_home(tmp_path)
+    # Seed the models_cache with the 5-model fixture (the user's pre-existing state).
+    _seed_cache(paths)
+    monkeypatch.setenv("ZAI_API_KEY", "sk-setup-models-cache-9")
+
+    # Capture prints (the summary line confirms the step ran).
+    printed: list[str] = []
+
+    def print_fn(*args, **_kw) -> None:
+        printed.append(" ".join(str(a) for a in args))
+
+    from zai_codex_helper.services.setup import run_setup
+
+    rc = run_setup(paths, yes=True, dry_run=False, print_fn=print_fn)
+
+    assert rc == 0
+    # After setup, models_cache has glm-5.2 + the 5 originals (6 total).
+    result = JsonBackend(paths).read()
+    slugs = [m["slug"] for m in result["models"]]
+    assert "glm-5.2" in slugs
+    assert set(_SEED_SLUGS).issubset(set(slugs))
+    assert len(result["models"]) == 6
+    # The summary line for the models_cache step fired.
+    assert any("models_cache.json" in line and "glm-5.2" in line for line in printed)
+
+
+@pytest.mark.integration
+def test_setup_dry_run_models_cache_no_mutation_with_diff(tmp_path, monkeypatch):
+    """Test 10 (D-95/D-98 dry-run): invoke ``run_setup(dry_run=True)``; assert
+    ZERO mutation of paths.models_cache (byte-identical to the seed) AND the
+    captured stdout contains a unified-diff header mentioning glm-5.2 (Plan 01's
+    compute_diff is available — Plan 02 runs in Wave 2 after Plan 01)."""
+    import os
+    import stat
+
+    # Pre-create the Moon Bridge binary (dry-run skips build, but keep parity).
+    binary = tmp_path / ".codex" / "moon-bridge"
+    binary.write_bytes(b"#!/bin/sh\nexit 0\n")
+    os.chmod(binary, 0o755)
+    assert binary.stat().st_mode & stat.S_IXUSR
+
+    paths = Paths.from_home(tmp_path)
+    # Seed models_cache — capture the EXACT seed bytes for the no-mutation proof.
+    _seed_cache(paths)
+    seed_bytes = paths.models_cache.read_bytes()
+    monkeypatch.setenv("ZAI_API_KEY", "sk-dry-run-models-cache-10")
+
+    printed: list[str] = []
+
+    def print_fn(*args, **_kw) -> None:
+        printed.append(" ".join(str(a) for a in args))
+
+    from zai_codex_helper.services.setup import run_setup
+
+    rc = run_setup(paths, yes=True, dry_run=True, print_fn=print_fn)
+
+    assert rc == 0
+    # NO mutation: byte-identical to the seed (the load-bearing dry-run property).
+    assert paths.models_cache.read_bytes() == seed_bytes
+    # The dry-run printed a unified diff for models_cache. The diff's target
+    # header references the models_cache path, and the diff body references
+    # glm-5.2 (the would-be-added entry). Join all printed lines for the search.
+    output = "\n".join(printed)
+    assert "models_cache.json" in output
+    assert "glm-5.2" in output
+    # A unified diff header marker is present (either '+++'/'---' or '@@').
+    assert "+++" in output or "---" in output or "@@" in output
+    # The dry-run summary line for models_cache fired.
+    assert any("models_cache.json" in line and "dry-run" in line for line in printed)
