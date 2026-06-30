@@ -324,5 +324,5 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 11. Moon Bridge Install (build-from-source) | 1/1 | Complete    | 2026-06-29 |
 | 12. CLI setup (onboarding orchestrator) | 1/1 | Complete    | 2026-06-30 |
 | 13. Service Lifecycle | 1/1 | Complete    | 2026-06-30 |
-| 14. doctor (diagnostic pipeline) | 1/1 | Complete   | 2026-06-30 |
+| 14. doctor (diagnostic pipeline) | 1/1 | Complete    | 2026-06-30 |
 | 15. Polish, Release Hardening & models_cache Spike | 0/0 | Not started | - |

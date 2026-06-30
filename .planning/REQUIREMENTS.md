@@ -41,10 +41,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Diagnostics (`doctor`)
 
-- [ ] **DIAG-01**: `doctor` проверяет всю цепочку: Moon Bridge binary → `moonbridge-zai.yml` parseable → порт `127.0.0.1:38440` → `GET /v1/models` → `POST /v1/responses` с `glm-5.2` → `models_cache.json` → текущий дефолт → LaunchAgent loaded → права ключа `0600`
-- [ ] **DIAG-02**: HTTP-пробы (`/v1/models` AND `/v1/responses`) с жёстким timeout — порт открыт ≠ auth корректен
-- [ ] **DIAG-03**: Detection запущенного Codex Desktop (`pgrep -x Codex`) с предупреждением о потенциально stale config
-- [ ] **DIAG-04**: Цветные маркеры `[✓]`/`[!]`/`[✗]` + "To fix:" per failure; exit non-zero только на `✗`
+- [x] **DIAG-01**: `doctor` проверяет всю цепочку: Moon Bridge binary → `moonbridge-zai.yml` parseable → порт `127.0.0.1:38440` → `GET /v1/models` → `POST /v1/responses` с `glm-5.2` → `models_cache.json` → текущий дефолт → LaunchAgent loaded → права ключа `0600`
+- [x] **DIAG-02**: HTTP-пробы (`/v1/models` AND `/v1/responses`) с жёстким timeout — порт открыт ≠ auth корректен
+- [x] **DIAG-03**: Detection запущенного Codex Desktop (`pgrep -x Codex`) с предупреждением о потенциально stale config
+- [x] **DIAG-04**: Цветные маркеры `[✓]`/`[!]`/`[✗]` + "To fix:" per failure; exit non-zero только на `✗`
 
 ### Service Lifecycle
 
@@ -135,10 +135,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SECR-01 | Phase 12 | Complete |
 | SECR-02 | Phase 9 | Complete |
 | SECR-03 | Phase 15 | Pending |
-| DIAG-01 | Phase 14 | Pending |
-| DIAG-02 | Phase 14 | Pending |
-| DIAG-03 | Phase 14 | Pending |
-| DIAG-04 | Phase 14 | Pending |
+| DIAG-01 | Phase 14 | Complete |
+| DIAG-02 | Phase 14 | Complete |
+| DIAG-03 | Phase 14 | Complete |
+| DIAG-04 | Phase 14 | Complete |
 | SERV-01 | Phase 13 | Complete |
 | SERV-02 | Phase 13 | Complete |
 | SERV-03 | Phase 13 | Complete |
