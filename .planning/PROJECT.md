@@ -38,6 +38,7 @@
 - ✓ `zai-codex-helper setup` (capstone onboarding: provider → API key env/getpass @0600 → Moon Bridge build → shell helpers → apply provider → LaunchAgent offer-to-`install-service`; `--no-input` scriptable; idempotent; key never echoed) — Validated in Phase 12: CLI setup (SETUP-01/02/03, SECR-01/03). 239 тестов. Доказано end-to-end через subprocess.
 - ✓ `install-service`/`uninstall-service` (modern `launchctl bootstrap`/`bootout`/`print`; shared `LAUNCHAGENT_LABEL` imported from PlistBackend — orphan-prevention; idempotent EIO swallow + real-error raise; post-install verify print + TCP port probe) — Validated in Phase 13: Service Lifecycle (SERV-01/02/03/04). 264 теста. launchctl mock-tested.
 - ✓ `zai-codex-helper doctor` (9-check diagnostic chain: binary → yml → port → /v1/models → /v1/responses → models_cache → default → LaunchAgent → key 0600; httpx hard timeout port≠auth; pgrep Codex warn; colored markers + To-fix + exit-on-✗) — Validated in Phase 14: doctor (DIAG-01/02/03/04). 282 теста. Доказано live против реального Moon Bridge.
+- ✓ **RELEASE-READY**: `--dry-run` real diff preview (CONF-07); secrets hardening (SECR-03 — grep audit 0 hardcoded keys + .gitignore + pre-commit scan); CI matrix 3.10–3.13 wheel-install + --help + pytest-not-e2e (TEST-05); models_cache glm-5.2 list-aware merge (spike-first, D-98); e2e harness local-only (TEST-04) — Validated in Phase 15: Polish & Release Hardening. 311 тестов. *Все 15 фаз milestone v1.0 complete.*
 
 ### Active
 
