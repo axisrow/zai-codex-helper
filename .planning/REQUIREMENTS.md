@@ -23,7 +23,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **CONF-04**: `restore` команда — откат к последнему бэкапу
 - [x] **CONF-05**: Post-condition проверки после записи (provider resolves, has `base_url`, no reserved id redefined)
 - [x] **CONF-06**: Идемпотентность — повторный `setup`/`use` даёт byte-идентичный результат (upsert, не append)
-- [ ] **CONF-07**: `--dry-run` / diff preview перед изменением `~/.codex` и `~/.zshrc`
+- [x] **CONF-07**: `--dry-run` / diff preview перед изменением `~/.codex` и `~/.zshrc`
 
 ### Provider Switching (Core Value)
 
@@ -37,7 +37,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **SECR-01**: `ZAI_API_KEY` читается из env или вводится интерактивно (never echoed)
 - [x] **SECR-02**: Ключ хранится в `~/.codex/moonbridge-zai.yml` с правами `0600`
-- [ ] **SECR-03**: Никаких захардкоженных ключей в пакете; ключи не логируются и не попадают в git
+- [x] **SECR-03**: Никаких захардкоженных ключей в пакете; ключи не логируются и не попадают в git
 
 ### Diagnostics (`doctor`)
 
@@ -69,15 +69,15 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Secondary Files
 
 - [x] **SEC-01**: Shell helpers `codex-zai()` / `codex-openai()` в `.zshrc` (opt-in, marker-fenced `# >>> zai-codex-helper >>>` / `# <<<`, clean removal)
-- [ ] **SEC-02**: `models_cache.json` update записью `glm-5.2` (silence metadata warning) — GATED на schema spike (проверить реальную схему; рассмотреть `model_catalog_json` как non-clobberable альтернативу)
+- [x] **SEC-02**: `models_cache.json` update записью `glm-5.2` (silence metadata warning) — GATED на schema spike (проверить реальную схему; рассмотреть `model_catalog_json` как non-clobberable альтернативу)
 
 ### Testing & Quality
 
-- [ ] **TEST-01**: Unit-тесты: патч TOML сохраняет trust blocks, `use zai`/`use openai` корректны, идемпотентность, backup-once
-- [ ] **TEST-02**: Integration-тесты: запись во временный `HOME`, `doctor` против фейк-сервиса Moon Bridge (pytest-httpserver)
-- [ ] **TEST-03**: Smoke: полный `setup → doctor` без вызова модели
-- [ ] **TEST-04**: e2e harness: `use zai` → живой `codex exec "Respond exactly: OK"` → `use openai` → снова `codex exec` (локально, вне CI, требует живого ключа)
-- [ ] **TEST-05**: CI прогоняет unit + integration + smoke; e2e исключён из CI (маркер `pytest -m e2e`)
+- [x] **TEST-01**: Unit-тесты: патч TOML сохраняет trust blocks, `use zai`/`use openai` корректны, идемпотентность, backup-once
+- [x] **TEST-02**: Integration-тесты: запись во временный `HOME`, `doctor` против фейк-сервиса Moon Bridge (pytest-httpserver)
+- [x] **TEST-03**: Smoke: полный `setup → doctor` без вызова модели
+- [x] **TEST-04**: e2e harness: `use zai` → живой `codex exec "Respond exactly: OK"` → `use openai` → снова `codex exec` (локально, вне CI, требует живого ключа)
+- [x] **TEST-05**: CI прогоняет unit + integration + smoke; e2e исключён из CI (маркер `pytest -m e2e`)
 
 ## v2 Requirements
 
@@ -126,7 +126,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONF-04 | Phase 4 | Complete |
 | CONF-05 | Phase 6 | Complete |
 | CONF-06 | Phase 7 | Complete |
-| CONF-07 | Phase 15 | Pending |
+| CONF-07 | Phase 15 | Complete |
 | PROV-01 | Phase 7 | Complete |
 | PROV-02 | Phase 7 | Complete |
 | PROV-03 | Phase 6 | Complete |
@@ -134,7 +134,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROV-05 | Phase 8 | Complete |
 | SECR-01 | Phase 12 | Complete |
 | SECR-02 | Phase 9 | Complete |
-| SECR-03 | Phase 15 | Pending |
+| SECR-03 | Phase 15 | Complete |
 | DIAG-01 | Phase 14 | Complete |
 | DIAG-02 | Phase 14 | Complete |
 | DIAG-03 | Phase 14 | Complete |
@@ -151,12 +151,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SETUP-02 | Phase 12 | Complete |
 | SETUP-03 | Phase 12 | Complete |
 | SEC-01 | Phase 9 | Complete |
-| SEC-02 | Phase 15 | Pending |
-| TEST-01 | Phase 15 | Pending |
-| TEST-02 | Phase 15 | Pending |
-| TEST-03 | Phase 15 | Pending |
-| TEST-04 | Phase 15 | Pending |
-| TEST-05 | Phase 15 | Pending |
+| SEC-02 | Phase 15 | Complete |
+| TEST-01 | Phase 15 | Complete |
+| TEST-02 | Phase 15 | Complete |
+| TEST-03 | Phase 15 | Complete |
+| TEST-04 | Phase 15 | Complete |
+| TEST-05 | Phase 15 | Complete |
 
 **Coverage:**
 

@@ -356,7 +356,7 @@ def test_setup_wires_models_cache_step(tmp_path, monkeypatch):
     import os
     import stat
 
-    models_cache = _import_service()
+    _import_service()  # lazy-import check (side-effect only)
     # Pre-create the Moon Bridge binary so build_moonbridge's idempotency skip
     # fires before any subprocess (mirrors tests/test_setup.py::_precreate_binary).
     binary = tmp_path / ".codex" / "moon-bridge"
