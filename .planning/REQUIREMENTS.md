@@ -35,7 +35,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Secrets
 
-- [ ] **SECR-01**: `ZAI_API_KEY` читается из env или вводится интерактивно (never echoed)
+- [x] **SECR-01**: `ZAI_API_KEY` читается из env или вводится интерактивно (never echoed)
 - [x] **SECR-02**: Ключ хранится в `~/.codex/moonbridge-zai.yml` с правами `0600`
 - [ ] **SECR-03**: Никаких захардкоженных ключей в пакете; ключи не логируются и не попадают в git
 
@@ -62,9 +62,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Setup Onboarding
 
-- [ ] **SETUP-01**: `setup` — интерактивный онбординг: default provider (zai/openai), API key из `ZAI_API_KEY`/stdin, shell helpers opt-in, LaunchAgent, Moon Bridge install
-- [ ] **SETUP-02**: Полностью scriptable через `--yes` / `--no-input` (единый `confirm()` helper)
-- [ ] **SETUP-03**: Идемпотентный (run twice → identical output)
+- [x] **SETUP-01**: `setup` — интерактивный онбординг: default provider (zai/openai), API key из `ZAI_API_KEY`/stdin, shell helpers opt-in, LaunchAgent, Moon Bridge install
+- [x] **SETUP-02**: Полностью scriptable через `--yes` / `--no-input` (единый `confirm()` helper)
+- [x] **SETUP-03**: Идемпотентный (run twice → identical output)
 
 ### Secondary Files
 
@@ -132,7 +132,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROV-03 | Phase 6 | Complete |
 | PROV-04 | Phase 7 | Complete |
 | PROV-05 | Phase 8 | Complete |
-| SECR-01 | Phase 12 | Pending |
+| SECR-01 | Phase 12 | Complete |
 | SECR-02 | Phase 9 | Complete |
 | SECR-03 | Phase 15 | Pending |
 | DIAG-01 | Phase 14 | Pending |
@@ -147,9 +147,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEPS-02 | Phase 10 | Complete |
 | DEPS-03 | Phase 11 | Complete |
 | DEPS-04 | Phase 11 | Complete |
-| SETUP-01 | Phase 12 | Pending |
-| SETUP-02 | Phase 12 | Pending |
-| SETUP-03 | Phase 12 | Pending |
+| SETUP-01 | Phase 12 | Complete |
+| SETUP-02 | Phase 12 | Complete |
+| SETUP-03 | Phase 12 | Complete |
 | SEC-01 | Phase 9 | Complete |
 | SEC-02 | Phase 15 | Pending |
 | TEST-01 | Phase 15 | Pending |
