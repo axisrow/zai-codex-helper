@@ -283,7 +283,9 @@ Plans:
   4. Output uses colored `[✓]`/`[!]`/`[✗]` markers with a "To fix:" line per failure, and exits non-zero only on `✗`
 
 **Notes**: Research flag LOW — flutter/brew/rustup doctor patterns are well-established.
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 14-01-PLAN.md — run_doctor ordered 9-check pipeline + CheckResult + ANSI color helpers + _handle_doctor wiring (pytest-httpserver + mocked runner)
 
 ### Phase 15: Polish, Release Hardening & models_cache Spike
 
