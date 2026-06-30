@@ -39,8 +39,8 @@ orchestrator that composes every prior phase (Paths, backup, TomlBackend,
 YamlBackend@0600, ShellBackend, build_moonbridge, the provider pipeline)
 into one interactive + scriptable + idempotent end-to-end flow. The handler
 is a thin shell: it resolves ``Paths.default()`` and forwards
-``args.yes or args.no_input`` (D-79 — both flags map to headless mode) +
-``args.dry_run``. All step logic lives in the orchestrator (D-81). A new
+``getattr(args, 'yes', False) or getattr(args, 'no_input', False)`` (D-79 — both flags map to headless mode) +
+``getattr(args, 'dry_run', False)``. All step logic lives in the orchestrator (D-81). A new
 ``--no-input`` root flag mirrors ``--yes`` for non-interactive automation.
 install-service / uninstall-service / doctor REMAINED stubs until their phases.
 
@@ -198,8 +198,14 @@ def _apply_provider_pipeline(transform, warn_stream, *, dry_run: bool = False) -
     #    so without this branch `use zai` on a fresh install errors out
     #    instead of creating the config. An empty tomlkit document is the
     #    minimal seed; the transform (step f) populates it.
+    #    DRY-RUN (CONF-07 / integration B-1): do NOT write the seed under
+    #    dry_run — a dry-run must not mutate ANY file. Read an empty doc
+    #    in-memory instead (mirrors setup.py:_apply_provider_inline line 290).
     if not backend.exists():
-        backend.write_canonical(tomlkit.document())
+        if dry_run:
+            print("would create config.toml (seed)", file=warn_stream)
+        else:
+            backend.write_canonical(tomlkit.document())
 
     # d. One-shot .bak (D-45 step 2). Sentinel-gated: no-op after the first
     #    run, so calling it every time is safe and idempotent. DRY-RUN: this
@@ -212,7 +218,12 @@ def _apply_provider_pipeline(transform, warn_stream, *, dry_run: bool = False) -
         backend.backup_once()
 
     # e. Read the (now-existing) config into a live, style-preserving doc.
-    doc = backend.read()
+    #    DRY-RUN: if dry_run skipped the seed write (config absent), read an
+    #    empty doc in-memory — the diff shows the full target as additions.
+    if dry_run and not backend.exists():
+        doc = tomlkit.document()
+    else:
+        doc = backend.read()
     # f. Apply the pure desired-state transform (apply_zai / apply_openai).
     doc = transform(doc)
 
@@ -265,7 +276,7 @@ def _handle_use_zai(args: argparse.Namespace) -> int:
 
     # Phase 15 (D-95): forward the root --dry-run flag so `use zai --dry-run`
     # previews the would-be config.toml change as a diff and writes nothing.
-    _apply_provider_pipeline(apply_zai, sys.stderr, dry_run=args.dry_run)
+    _apply_provider_pipeline(apply_zai, sys.stderr, dry_run=getattr(args, 'dry_run', False))
     return 0
 
 
@@ -294,7 +305,7 @@ def _handle_use_openai(args: argparse.Namespace) -> int:
 
     # Phase 15 (D-95): forward the root --dry-run flag so `use openai --dry-run`
     # previews the would-be config.toml change as a diff and writes nothing.
-    _apply_provider_pipeline(apply_openai, sys.stderr, dry_run=args.dry_run)
+    _apply_provider_pipeline(apply_openai, sys.stderr, dry_run=getattr(args, 'dry_run', False))
     return 0
 
 
@@ -480,7 +491,7 @@ def _handle_install_service(args: argparse.Namespace) -> int:
     # Phase 15 (D-95): forward the root --dry-run flag so
     # `install-service --dry-run` prints a "would write plist + bootstrap"
     # summary and writes/calls nothing.
-    return install_service(paths, dry_run=args.dry_run)
+    return install_service(paths, dry_run=getattr(args, 'dry_run', False))
 
 
 def _handle_uninstall_service(args: argparse.Namespace) -> int:
@@ -530,14 +541,14 @@ def _handle_setup(args: argparse.Namespace) -> int:
     :class:`ZaiCodexHelperError` (D-11 — owned by :func:`main`), does NOT call
     ``sys.exit``.
 
-    D-79 mapping: ``args.yes or args.no_input`` both force headless mode
+    D-79 mapping: ``getattr(args, 'yes', False) or getattr(args, 'no_input', False)`` both force headless mode
     (every ``confirm()`` returns True; provider defaults to zai; ZAI_API_KEY
     env becomes REQUIRED). The ``--no-input`` flag is added in
     :func:`build_parser` alongside ``--yes``.
 
     Args:
         args: The parsed argparse namespace. Reads ``args.yes``,
-            ``args.no_input``, and ``args.dry_run``.
+            ``args.no_input``, and ``getattr(args, 'dry_run', False)``.
 
     Returns:
         0 on success (the orchestrator raises on failure; success means the
@@ -552,8 +563,8 @@ def _handle_setup(args: argparse.Namespace) -> int:
     paths = Paths.default()
     return run_setup(
         paths,
-        yes=args.yes or args.no_input,
-        dry_run=args.dry_run,
+        yes=getattr(args, 'yes', False) or getattr(args, 'no_input', False),
+        dry_run=getattr(args, 'dry_run', False),
     )
 
 
@@ -603,30 +614,43 @@ def build_parser() -> argparse.ArgumentParser:
     produces argparse's clean error + exit 2 instead of an
     ``AttributeError`` on ``args.func`` (RESEARCH Pitfall 4).
     """
-    parser = argparse.ArgumentParser(
-        prog="zai-codex-helper",
-        description="Manage the Codex ⇄ Moon Bridge ⇄ Z.ai link.",
-    )
-    parser.add_argument(
+    # Global flags (B-2 fix): work BOTH before AND after the subcommand.
+    # Root copy has normal False defaults; subparser copy uses SUPPRESS so
+    # it doesn't override root-parsed values (argparse subparser quirk).
+    global_flags = argparse.ArgumentParser(add_help=False)
+    global_flags.add_argument(
         "--debug",
         action="store_true",
         help="show full traceback on error",
     )
-    parser.add_argument(
+    global_flags.add_argument(
         "--yes",
         "-y",
         action="store_true",
         help="answer yes to all prompts (non-interactive)",
     )
-    parser.add_argument(
+    global_flags.add_argument(
         "--no-input",
         action="store_true",
         help="non-interactive: no prompts, env vars required",
     )
-    parser.add_argument(
+    global_flags.add_argument(
         "--dry-run",
         action="store_true",
         help="preview changes without writing",
+    )
+
+    # Subparser copy with SUPPRESS defaults (post-subcommand flags).
+    sub_flags = argparse.ArgumentParser(add_help=False)
+    sub_flags.add_argument("--debug", action="store_true", default=argparse.SUPPRESS, help="show full traceback on error")
+    sub_flags.add_argument("--yes", "-y", action="store_true", default=argparse.SUPPRESS, help="answer yes to all prompts")
+    sub_flags.add_argument("--no-input", action="store_true", default=argparse.SUPPRESS, help="non-interactive")
+    sub_flags.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS, help="preview without writing")
+
+    parser = argparse.ArgumentParser(
+        prog="zai-codex-helper",
+        description="Manage the Codex ⇄ Moon Bridge ⇄ Z.ai link.",
+        parents=[sub_flags],
     )
 
     subparsers = parser.add_subparsers(
@@ -639,6 +663,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_use = subparsers.add_parser(
         "use",
         help="switch the default Codex provider",
+        parents=[sub_flags],
     )
     use_sub = p_use.add_subparsers(
         dest="provider",
@@ -648,68 +673,57 @@ def build_parser() -> argparse.ArgumentParser:
     use_sub.add_parser(
         "zai",
         help="make Z.ai (glm-5.2 xhigh) the default",
+        parents=[sub_flags],
     ).set_defaults(func=_handle_use_zai)
     use_sub.add_parser(
         "openai",
         help="revert to OpenAI",
+        parents=[sub_flags],
     ).set_defaults(func=_handle_use_openai)
 
     # `restore` — the FIRST real (non-stub) subcommand (Phase 4, D-31).
-    # SC-2: "a `restore` command rolls the user's config back to the last
-    # one-time backup". Autonomous (no prompt in Phase 4). The handler lets
-    # ZaiCodexHelperError propagate so main() owns the D-11 formatting.
     p_restore = subparsers.add_parser(
         "restore",
         help="restore config from the one-time backup",
+        parents=[sub_flags],
     )
     p_restore.set_defaults(func=_handle_restore)
 
-    # `status` — the read-only observability command (Phase 8, D-50..D-55).
-    # Prints the current provider, config paths, and version. READ-ONLY (D-51).
+    # `status` — read-only observability (Phase 8, D-50..D-55).
     p_status = subparsers.add_parser(
         "status",
         help="show current provider, config paths, and version",
+        parents=[sub_flags],
     )
     p_status.set_defaults(func=_handle_status)
 
-    # `setup` — the FOURTH real (non-stub) subcommand (Phase 12, D-76..D-82).
-    # The onboarding capstone: delegates to services.setup.run_setup (the
-    # services-layer orchestrator). install-service / uninstall-service are
-    # the FIFTH/SIXTH real subcommands (Phase 13 below); doctor is the SEVENTH
-    # (Phase 14 below).
+    # `setup` — onboarding capstone (Phase 12, D-76..D-82).
     p_setup = subparsers.add_parser(
         "setup",
         help="guided end-to-end onboarding",
+        parents=[sub_flags],
     )
     p_setup.set_defaults(func=_handle_setup)
 
-    # `install-service` / `uninstall-service` — the FIFTH/SIXTH real (non-stub)
-    # subcommands (Phase 13, D-83..D-88; SERV-01..04). The LaunchAgent lifecycle
-    # pair: install writes the plist + bootstraps the agent (+ verifies loaded +
-    # listening); uninstall bootouts the agent + removes the plist. Both share
-    # ONE Label constant imported from PlistBackend (D-85 — no orphan). The
-    # handlers are thin shells (lazy imports, Paths.default(), delegate); the
-    # runner seam is NOT forwarded (production uses the real launchctl).
+    # `install-service` / `uninstall-service` (Phase 13, D-83..D-88; SERV-01..04).
     p_install = subparsers.add_parser(
         "install-service",
         help="install the Moon Bridge LaunchAgent",
+        parents=[sub_flags],
     )
     p_install.set_defaults(func=_handle_install_service)
     p_uninstall = subparsers.add_parser(
         "uninstall-service",
         help="uninstall the Moon Bridge LaunchAgent",
+        parents=[sub_flags],
     )
     p_uninstall.set_defaults(func=_handle_uninstall_service)
 
-    # `doctor` — the SEVENTH real (non-stub) subcommand (Phase 14,
-    # D-89..D-94; DIAG-01..04). The LAST Phase 1 stub to become real: the
-    # Phase 1 stub set is now EMPTY. READ-ONLY 9-check diagnostic; the handler
-    # is a thin shell (lazy imports, Paths.default(), delegate); the
-    # runner/http_client/environ seams are NOT forwarded (production uses the
-    # real subprocess.run + an internally-constructed httpx.Client).
+    # `doctor` — diagnostic (Phase 14, D-89..D-94; DIAG-01..04).
     p_doctor = subparsers.add_parser(
         "doctor",
         help="diagnose the Codex ⇄ Moon Bridge ⇄ Z.ai chain",
+        parents=[sub_flags],
     )
     p_doctor.set_defaults(func=_handle_doctor)
 
