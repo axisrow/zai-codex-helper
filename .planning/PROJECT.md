@@ -36,6 +36,7 @@
 - ✓ Dependency detection (`detect_go`/`detect_brew`/`detect_moonbridge_binary` → `DepResult`; brew arch `/opt/homebrew` vs `/usr/local` runtime resolution; `offer_install` never-auto-install + platform gate) — Validated in Phase 10: Dependency Detection (DEPS-01/02). 210 тестов.
 - ✓ Moon Bridge build-from-source (`build_moonbridge`: pinned SHA `1cdae19…` v0.1.0 never main → `git clone`+checkout → `go build -o ~/.codex/moon-bridge` → `chmod 0755`; Go 1.25+ gate с brew one-liner; idempotent skip; НЕ вендорится в wheel GPL v3) — Validated in Phase 11: Moon Bridge Install (DEPS-03/04). 228 тестов. Оркестрация mock-tested; e2e real-build smoke gated.
 - ✓ `zai-codex-helper setup` (capstone onboarding: provider → API key env/getpass @0600 → Moon Bridge build → shell helpers → apply provider → LaunchAgent offer-to-`install-service`; `--no-input` scriptable; idempotent; key never echoed) — Validated in Phase 12: CLI setup (SETUP-01/02/03, SECR-01/03). 239 тестов. Доказано end-to-end через subprocess.
+- ✓ `install-service`/`uninstall-service` (modern `launchctl bootstrap`/`bootout`/`print`; shared `LAUNCHAGENT_LABEL` imported from PlistBackend — orphan-prevention; idempotent EIO swallow + real-error raise; post-install verify print + TCP port probe) — Validated in Phase 13: Service Lifecycle (SERV-01/02/03/04). 264 теста. launchctl mock-tested.
 
 ### Active
 
