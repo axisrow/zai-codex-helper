@@ -31,6 +31,18 @@ translator (:func:`zai_codex_helper.services.status.read_for_status`), Phase
 provider constants. Detection (D-53) is delegated to the pure
 :func:`zai_codex_helper.services.status.detect_provider` helper. The other
 four commands (setup/doctor/install-service/uninstall-service) remain stubs.
+
+Phase 12 (D-76..D-82, SETUP-01/02/03, SECR-01/03): ``setup`` is the onboarding
+capstone — the FOURTH real (non-stub) subcommand. It delegates to
+:func:`zai_codex_helper.services.setup.run_setup`, the services-layer
+orchestrator that composes every prior phase (Paths, backup, TomlBackend,
+YamlBackend@0600, ShellBackend, build_moonbridge, the provider pipeline)
+into one interactive + scriptable + idempotent end-to-end flow. The handler
+is a thin shell: it resolves ``Paths.default()`` and forwards
+``args.yes or args.no_input`` (D-79 — both flags map to headless mode) +
+``args.dry_run``. All step logic lives in the orchestrator (D-81). A new
+``--no-input`` root flag mirrors ``--yes`` for non-interactive automation.
+doctor / install-service / uninstall-service REMAIN stubs (their phases).
 """
 
 import argparse
@@ -386,6 +398,49 @@ def _handle_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_setup(args: argparse.Namespace) -> int:
+    """Run the guided end-to-end onboarding (D-76..D-82, SETUP-01/02/03).
+
+    Phase 12 — the capstone. This is the command a new user runs ONCE to wire
+    up the whole Codex ⇄ Moon Bridge ⇄ Z.ai link: it walks provider choice →
+    API key → ``moonbridge-zai.yml``@0600 → Moon Bridge build → shell helpers
+    opt-in → apply the chosen provider → LaunchAgent OFFER → summary. The same
+    flow runs headless via ``--yes`` / ``--no-input`` (D-79). Replaces the
+    Phase 1 ``_stub("setup")`` wiring (D-02).
+
+    Follows the D-31 restore / D-45 use-handler shape verbatim: lazy imports
+    inside the body, resolve ``Paths.default()``, delegate, return the int the
+    orchestrator returns (0 on success). Does NOT catch
+    :class:`ZaiCodexHelperError` (D-11 — owned by :func:`main`), does NOT call
+    ``sys.exit``.
+
+    D-79 mapping: ``args.yes or args.no_input`` both force headless mode
+    (every ``confirm()`` returns True; provider defaults to zai; ZAI_API_KEY
+    env becomes REQUIRED). The ``--no-input`` flag is added in
+    :func:`build_parser` alongside ``--yes``.
+
+    Args:
+        args: The parsed argparse namespace. Reads ``args.yes``,
+            ``args.no_input``, and ``args.dry_run``.
+
+    Returns:
+        0 on success (the orchestrator raises on failure; success means the
+        full onboarding flow completed and the chosen provider is applied).
+    """
+    # Lazy imports keep `parser.py` import-light at module load (mirrors the
+    # `_handle_restore` / `_handle_use_zai` discipline). The orchestrator owns
+    # ALL step logic; the handler is a thin arg-forwarding shell (D-81).
+    from zai_codex_helper.services.paths import Paths
+    from zai_codex_helper.services.setup import run_setup
+
+    paths = Paths.default()
+    return run_setup(
+        paths,
+        yes=args.yes or args.no_input,
+        dry_run=args.dry_run,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the root ``zai-codex-helper`` argparse parser.
 
@@ -409,6 +464,11 @@ def build_parser() -> argparse.ArgumentParser:
         "-y",
         action="store_true",
         help="answer yes to all prompts (non-interactive)",
+    )
+    parser.add_argument(
+        "--no-input",
+        action="store_true",
+        help="non-interactive: no prompts, env vars required",
     )
     parser.add_argument(
         "--dry-run",
@@ -459,10 +519,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_status.set_defaults(func=_handle_status)
 
-    # The remaining 4 top-level commands — each a stub until its phase arrives
-    # (D-55: status is no longer a stub; setup/doctor/install-service/
-    # uninstall-service belong to later phases).
-    for name in ("setup", "doctor", "install-service", "uninstall-service"):
+    # `setup` — the FOURTH real (non-stub) subcommand (Phase 12, D-76..D-82).
+    # The onboarding capstone: delegates to services.setup.run_setup (the
+    # services-layer orchestrator). doctor / install-service / uninstall-service
+    # remain stubs below (their phases).
+    p_setup = subparsers.add_parser(
+        "setup",
+        help="guided end-to-end onboarding",
+    )
+    p_setup.set_defaults(func=_handle_setup)
+
+    # The remaining 3 top-level commands — each a stub until its phase arrives
+    # (D-55/D-82: setup is no longer a stub; doctor/install-service/
+    # uninstall-service belong to later phases 13/14).
+    for name in ("doctor", "install-service", "uninstall-service"):
         sp = subparsers.add_parser(name, help=f"{name} (stub)")
         sp.set_defaults(func=_stub(name))
 
