@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 12
-current_phase_name: onboarding orchestrator
+current_phase_name: cli-setup
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-06-29T17:20:00.031Z"
-last_activity: 2026-06-29
-last_activity_desc: Phase 11 complete, transitioned to Phase 12
+last_updated: "2026-06-30T02:21:11.039Z"
+last_activity: 2026-06-30
+last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 15
   completed_phases: 11
-  total_plans: 16
+  total_plans: 17
   completed_plans: 16
   percent: 73
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** One command (`use zai`) makes Z.ai (`glm-5.2 xhigh`) the default Codex provider, and one command (`use openai`) reverts to OpenAI — without hand-editing TOML/YAML/shell files.
-**Current focus:** Phase 11 — moon-bridge-install
+**Current focus:** Phase 12 — cli-setup
 
 ## Current Position
 
-Phase: 12 — CLI `setup` (onboarding orchestrator)
-Plan: Not started
-Status: Executing Phase 11
-Last activity: 2026-06-29 — Phase 11 complete, transitioned to Phase 12
+Phase: 12 (cli-setup) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 12
+Last activity: 2026-06-30 — Phase 12 execution started
 
 Progress: [░░░░░░░░░░] 0%
 

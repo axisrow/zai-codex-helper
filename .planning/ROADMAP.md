@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 9: Remaining File Backends (YAML / JSON / Shell / Plist)** - The disk-touching backends needed by `setup`, `install-service`, and `models_cache` (completed 2026-06-29)
 - [x] **Phase 10: Dependency Detection** - `shutil.which`-based detection of Go / brew / Moon Bridge binary with offer-to-install consent (completed 2026-06-29)
 - [x] **Phase 11: Moon Bridge Install (build-from-source)** - Go version check → brew bootstrap → pinned-SHA clone → `go build` → `chmod 0755` (HIGHEST research risk) (completed 2026-06-29)
-- [ ] **Phase 12: CLI `setup` (onboarding orchestrator)** - Interactive sequencer over all sub-operations, scriptable with `--yes`/`--no-input`, idempotent
+- [x] **Phase 12: CLI `setup` (onboarding orchestrator)** - Interactive sequencer over all sub-operations, scriptable with `--yes`/`--no-input`, idempotent (completed 2026-06-30)
 - [ ] **Phase 13: Service Lifecycle** - `install-service`/`uninstall-service` LaunchAgent pair sharing a plist Label constant
 - [ ] **Phase 14: `doctor` (diagnostic pipeline)** - Ordered chain checks with colored markers and "To fix:" guidance (built last)
 - [ ] **Phase 15: Polish, Release Hardening & models_cache Spike** - `--dry-run`, `restore`, secrets review, wheel-install CI, e2e harness, gated models_cache schema spike
@@ -248,7 +248,7 @@ Plans:
 
 Plans:
 
-- [ ] 12-01-PLAN.md — `setup` onboarding orchestrator (D-76..D-82): `services/setup.py` run_setup composing YamlBackend+build_moonbridge+ShellBackend+provider pipeline behind injected seams, `_handle_setup` CLI handler + `--no-input` flag, and tests/test_setup.py pinning SC-1/SC-2/SC-3 + SECR-03 no-leak + D-78 no-launchctl + D-79 env-required (SETUP-01/02/03, SECR-01/03)
+- [x] 12-01-PLAN.md — `setup` onboarding orchestrator (D-76..D-82): `services/setup.py` run_setup composing YamlBackend+build_moonbridge+ShellBackend+provider pipeline behind injected seams, `_handle_setup` CLI handler + `--no-input` flag, and tests/test_setup.py pinning SC-1/SC-2/SC-3 + SECR-03 no-leak + D-78 no-launchctl + D-79 env-required (SETUP-01/02/03, SECR-01/03)
 
 ### Phase 13: Service Lifecycle (`install-service` / `uninstall-service`)
 
@@ -316,7 +316,7 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 9. Remaining File Backends | 4/4 | Complete    | 2026-06-29 |
 | 10. Dependency Detection | 1/1 | Complete    | 2026-06-29 |
 | 11. Moon Bridge Install (build-from-source) | 1/1 | Complete    | 2026-06-29 |
-| 12. CLI setup (onboarding orchestrator) | 0/0 | Not started | - |
+| 12. CLI setup (onboarding orchestrator) | 1/1 | Complete   | 2026-06-30 |
 | 13. Service Lifecycle | 0/0 | Not started | - |
 | 14. doctor (diagnostic pipeline) | 0/0 | Not started | - |
 | 15. Polish, Release Hardening & models_cache Spike | 0/0 | Not started | - |
