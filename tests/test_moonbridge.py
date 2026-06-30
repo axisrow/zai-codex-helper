@@ -316,6 +316,7 @@ def test_command_sequence_clone_checkout_build(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_idempotent_skip_when_binary_exists_and_executable(tmp_path, monkeypatch):
     """Existing executable binary + force=False → ZERO runner calls (D-72)."""
+
     # detect_go must NOT be consulted on the skip path — patch it to raise if
     # called, proving the skip fires before the gate.
     def boom_detect_go():

@@ -136,12 +136,8 @@ def test_yaml_uses_safe_load_and_safe_dump_only():
 
     assert "yaml.safe_load" in source, "module must call yaml.safe_load"
     assert "yaml.safe_dump" in source, "module must call yaml.safe_dump"
-    assert "yaml.load(" not in source, (
-        "forbidden: bare yaml.load( (use yaml.safe_load)"
-    )
-    assert "yaml.dump(" not in source, (
-        "forbidden: bare yaml.dump( (use yaml.safe_dump)"
-    )
+    assert "yaml.load(" not in source, "forbidden: bare yaml.load( (use yaml.safe_load)"
+    assert "yaml.dump(" not in source, "forbidden: bare yaml.dump( (use yaml.safe_dump)"
 
 
 # --------------------------------------------------------------------------- #

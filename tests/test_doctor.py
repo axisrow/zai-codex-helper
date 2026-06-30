@@ -155,7 +155,7 @@ def _seed_full_pass_state(tmp_path):
         'model = "glm-5.2"\n'
         'model_provider = "zai-moonbridge"\n'
         'model_reasoning_effort = "xhigh"\n'
-        '[model_providers.zai-moonbridge]\n'
+        "[model_providers.zai-moonbridge]\n"
         'name = "Z.ai (Moon Bridge)"\n'
         'base_url = "http://127.0.0.1:38440/v1"\n'
         'wire_api = "responses"\n'
@@ -169,9 +169,7 @@ def _seed_full_pass_state(tmp_path):
 
 
 @pytest.mark.unit
-def test_full_chain_all_pass_returns_zero(
-    tmp_path, monkeypatch, httpserver, capsys
-):
+def test_full_chain_all_pass_returns_zero(tmp_path, monkeypatch, httpserver, capsys):
     """Every check passes → exit 0; the 9 names appear in order (DIAG-01).
 
     The chain order is load-bearing (a later check is only meaningful if
@@ -184,9 +182,9 @@ def test_full_chain_all_pass_returns_zero(
     httpserver.expect_request("/v1/models", method="GET").respond_with_data(
         '{"data": []}', status=200, content_type="application/json"
     )
-    httpserver.expect_request(
-        "/v1/responses", method="POST"
-    ).respond_with_data('{"id": "ok"}', status=200, content_type="application/json")
+    httpserver.expect_request("/v1/responses", method="POST").respond_with_data(
+        '{"id": "ok"}', status=200, content_type="application/json"
+    )
     # launchctl print → loaded; pgrep -x Codex → not running (empty stdout).
     runner, _ = _recording_runner(
         responses=[
@@ -299,9 +297,7 @@ def test_port_open_but_models_401_is_distinct_verdicts(
     assert "open" in port_line
     # /v1/models line: fail marker + 401 + a "To fix:" line after it.
     lines = out.splitlines()
-    models_idx = next(
-        i for i, ln in enumerate(lines) if "GET /v1/models" in ln
-    )
+    models_idx = next(i for i, ln in enumerate(lines) if "GET /v1/models" in ln)
     assert "401" in lines[models_idx]
     assert lines[models_idx + 1].startswith("    To fix:")
 
@@ -395,7 +391,9 @@ def test_http_probe_fails_fast_on_slow_endpoint(
         f"probe did not fail fast ({elapsed:.1f}s); hard timeout broken"
     )
     assert rc == 1  # the /v1/models fail
-    assert any("GET /v1/models" in ln and "request error" in ln for ln in out.splitlines())
+    assert any(
+        "GET /v1/models" in ln and "request error" in ln for ln in out.splitlines()
+    )
 
 
 # =========================================================================== #
@@ -656,9 +654,7 @@ def stat_mode(st):
 
 
 @pytest.mark.unit
-def test_doctor_is_read_only_byte_identical_home(
-    tmp_path, monkeypatch, httpserver
-):
+def test_doctor_is_read_only_byte_identical_home(tmp_path, monkeypatch, httpserver):
     """A full run leaves the tmp HOME byte-identical (D-94, threat T-14-03).
 
     No writes: no models_cache write, no yml write, no plist write, no build.

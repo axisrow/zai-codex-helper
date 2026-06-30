@@ -144,12 +144,8 @@ def test_detect_brew_apple_silicon(monkeypatch, tmp_path):
     as_path = tmp_path / "opt/homebrew/bin/brew"
     intel_path = tmp_path / "usr/local/bin/brew"
     _make_brew_at(str(as_path))
-    monkeypatch.setattr(
-        "zai_codex_helper.services.deps._BREW_AS_PATH", as_path
-    )
-    monkeypatch.setattr(
-        "zai_codex_helper.services.deps._BREW_INTEL_PATH", intel_path
-    )
+    monkeypatch.setattr("zai_codex_helper.services.deps._BREW_AS_PATH", as_path)
+    monkeypatch.setattr("zai_codex_helper.services.deps._BREW_INTEL_PATH", intel_path)
     monkeypatch.delenv("HOMEBREW_PREFIX", raising=False)
 
     result = detect_brew()
@@ -164,12 +160,8 @@ def test_detect_brew_intel(monkeypatch, tmp_path):
     as_path = tmp_path / "opt/homebrew/bin/brew"
     intel_path = tmp_path / "usr/local/bin/brew"
     _make_brew_at(str(intel_path))
-    monkeypatch.setattr(
-        "zai_codex_helper.services.deps._BREW_AS_PATH", as_path
-    )
-    monkeypatch.setattr(
-        "zai_codex_helper.services.deps._BREW_INTEL_PATH", intel_path
-    )
+    monkeypatch.setattr("zai_codex_helper.services.deps._BREW_AS_PATH", as_path)
+    monkeypatch.setattr("zai_codex_helper.services.deps._BREW_INTEL_PATH", intel_path)
     monkeypatch.delenv("HOMEBREW_PREFIX", raising=False)
 
     result = detect_brew()
@@ -189,12 +181,8 @@ def test_detect_brew_homebrew_prefix_override_wins(monkeypatch, tmp_path):
     _make_brew_at(str(as_path))
     _make_brew_at(str(intel_path))
     _make_brew_at(str(override_brew))
-    monkeypatch.setattr(
-        "zai_codex_helper.services.deps._BREW_AS_PATH", as_path
-    )
-    monkeypatch.setattr(
-        "zai_codex_helper.services.deps._BREW_INTEL_PATH", intel_path
-    )
+    monkeypatch.setattr("zai_codex_helper.services.deps._BREW_AS_PATH", as_path)
+    monkeypatch.setattr("zai_codex_helper.services.deps._BREW_INTEL_PATH", intel_path)
     monkeypatch.setenv("HOMEBREW_PREFIX", str(override_prefix))
 
     result = detect_brew()
@@ -209,12 +197,8 @@ def test_detect_brew_absent(monkeypatch, tmp_path):
     as_path = tmp_path / "opt/homebrew/bin/brew"
     intel_path = tmp_path / "usr/local/bin/brew"
     # Seed neither.
-    monkeypatch.setattr(
-        "zai_codex_helper.services.deps._BREW_AS_PATH", as_path
-    )
-    monkeypatch.setattr(
-        "zai_codex_helper.services.deps._BREW_INTEL_PATH", intel_path
-    )
+    monkeypatch.setattr("zai_codex_helper.services.deps._BREW_AS_PATH", as_path)
+    monkeypatch.setattr("zai_codex_helper.services.deps._BREW_INTEL_PATH", intel_path)
     monkeypatch.delenv("HOMEBREW_PREFIX", raising=False)
 
     result = detect_brew()

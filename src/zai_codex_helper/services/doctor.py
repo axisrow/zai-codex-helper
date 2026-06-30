@@ -143,7 +143,7 @@ def _marker(verdict: str, *, color: bool) -> str:
     return f"{_ANSI_RED}{glyph}{_ANSI_RESET}"
 
 
-def render_check(result: "CheckResult", *, color: bool | None = None) -> str:
+def render_check(result: CheckResult, *, color: bool | None = None) -> str:
     """Render a :class:`CheckResult` as one or two lines (D-92, DIAG-04).
 
     Line 1: ``<marker> <name>: <detail>``.

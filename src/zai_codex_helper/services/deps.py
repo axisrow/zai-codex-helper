@@ -263,8 +263,7 @@ def offer_install(
         )
 
     print(
-        f"{toolchain} not found. To build Moon Bridge, install it:\n"
-        f"  {install_command}"
+        f"{toolchain} not found. To build Moon Bridge, install it:\n  {install_command}"
     )
     if confirm_fn(f"Run `{install_command}` now?"):
         return True

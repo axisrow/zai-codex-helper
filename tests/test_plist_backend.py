@@ -102,7 +102,7 @@ def test_plist_write_emits_full_canonical_xml(tmp_path):
     backend.write_canonical()  # default → canonical_plist(paths)
     text = backend.path.read_text()
     # XML plist structure
-    assert "<plist version=\"1.0\">" in text
+    assert '<plist version="1.0">' in text
     assert "<dict>" in text
     # launchd-required keys
     assert "<key>Label</key>" in text
@@ -143,9 +143,7 @@ def test_plist_write_overwrites_not_merges(tmp_path):
     # Seed a different-Label, KeepAlive=False plist at the exact path.
     paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
     seed = {"Label": "com.example.other", "KeepAlive": False}
-    backend.path.write_bytes(
-        plistlib.dumps(seed, fmt=plistlib.FMT_XML)
-    )
+    backend.path.write_bytes(plistlib.dumps(seed, fmt=plistlib.FMT_XML))
     # Write the canonical default.
     backend.write_canonical()
     d = backend.read()

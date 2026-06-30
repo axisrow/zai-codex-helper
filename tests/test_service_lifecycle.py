@@ -85,9 +85,7 @@ def _patch_port(monkeypatch, *, connects):
             return _FakeSock()
         raise ConnectionRefusedError(111, "Connection refused")
 
-    monkeypatch.setattr(
-        lifecycle.socket, "create_connection", fake_create_connection
-    )
+    monkeypatch.setattr(lifecycle.socket, "create_connection", fake_create_connection)
 
 
 def _darwin(monkeypatch):
@@ -137,7 +135,10 @@ def test_install_service_bootstrap_argv_on_darwin(tmp_path, monkeypatch):
     paths = Paths.from_home(tmp_path)
     # print call returns rc 0 + a stdout without "Could not find" → loaded.
     runner, captured = _recording_runner(
-        responses=[_ok(["launchctl", "bootstrap"]), _ok(["launchctl", "print"], "state = running")]
+        responses=[
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
     )
     _patch_port(monkeypatch, connects=True)
 
@@ -170,7 +171,10 @@ def test_install_service_writes_plist_before_bootstrap(tmp_path, monkeypatch):
     _uid(monkeypatch)
     paths = Paths.from_home(tmp_path)
     runner, _ = _recording_runner(
-        responses=[_ok(["launchctl", "bootstrap"]), _ok(["launchctl", "print"], "state = running")]
+        responses=[
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
     )
     _patch_port(monkeypatch, connects=True)
 
@@ -218,7 +222,10 @@ def test_install_service_bootstrap_real_failure_raises(tmp_path, monkeypatch):
     runner, _ = _recording_runner(
         responses=[
             subprocess.CompletedProcess(
-                ["launchctl", "bootstrap"], 125, stdout="", stderr="Bootstrap failed: 125"
+                ["launchctl", "bootstrap"],
+                125,
+                stdout="",
+                stderr="Bootstrap failed: 125",
             )
         ]
     )
@@ -329,7 +336,7 @@ def test_uninstall_service_swallows_could_not_find_service(tmp_path, monkeypatch
                 ["launchctl", "bootout"],
                 36,
                 stdout="",
-                stderr="Could not find service \"dev.zai.moonbridge\" in domain",
+                stderr='Could not find service "dev.zai.moonbridge" in domain',
             )
         ]
     )
@@ -404,7 +411,9 @@ def test_uninstall_service_platform_gate_non_darwin_raises(tmp_path, monkeypatch
 
 
 @pytest.mark.unit
-def test_verify_returns_loaded_true_when_print_rc0_socket_connects(tmp_path, monkeypatch):
+def test_verify_returns_loaded_true_when_print_rc0_socket_connects(
+    tmp_path, monkeypatch
+):
     """print rc 0 (no "Could not find") + socket connects → (True, True) (D-86)."""
     _darwin(monkeypatch)
     _uid(monkeypatch)
@@ -445,7 +454,9 @@ def test_verify_returns_port_false_when_socket_refuses(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
-def test_verify_returns_loaded_false_when_print_says_could_not_find(tmp_path, monkeypatch):
+def test_verify_returns_loaded_false_when_print_says_could_not_find(
+    tmp_path, monkeypatch
+):
     """print stdout containing "Could not find service" → loaded=False (D-86)."""
     _darwin(monkeypatch)
     _uid(monkeypatch)
@@ -518,7 +529,10 @@ def test_install_raises_when_verify_reports_not_loaded(tmp_path, monkeypatch):
     with pytest.raises(ZaiCodexHelperError) as exc:
         lifecycle.install_service(paths, runner=runner)
 
-    assert "not loaded" in str(exc.value).lower() or "could not find" in str(exc.value).lower()
+    assert (
+        "not loaded" in str(exc.value).lower()
+        or "could not find" in str(exc.value).lower()
+    )
 
 
 @pytest.mark.unit

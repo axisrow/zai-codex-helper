@@ -228,8 +228,7 @@ def install_service(paths: Paths, *, runner: Runner = subprocess.run) -> int:
         stderr = result.stderr or ""
         if not _matches_any(stderr, _ALREADY_LOADED_PATTERNS):
             raise ZaiCodexHelperError(
-                f"launchctl bootstrap failed (rc={result.returncode}): "
-                f"{stderr.strip()}"
+                f"launchctl bootstrap failed (rc={result.returncode}): {stderr.strip()}"
             )
         # Idempotent success: agent already registered. Fall through to verify.
 
@@ -306,8 +305,7 @@ def uninstall_service(paths: Paths, *, runner: Runner = subprocess.run) -> int:
             # still raises — uninstall must not silently orphan the agent
             # (threat T-13-05).
             raise ZaiCodexHelperError(
-                f"launchctl bootout failed (rc={result.returncode}): "
-                f"{stderr.strip()}"
+                f"launchctl bootout failed (rc={result.returncode}): {stderr.strip()}"
             )
         # Idempotent success: agent already booted out. Fall through to plist
         # removal.
@@ -361,8 +359,7 @@ def verify_service_loaded(
     result = runner(argv, check=False, capture_output=True, text=True)
     combined = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
     launchctl_loaded = (
-        result.returncode == 0
-        and "could not find service" not in combined
+        result.returncode == 0 and "could not find service" not in combined
     )
 
     # 2. Port probe: short-timeout TCP connect to Moon Bridge's listener
