@@ -59,7 +59,120 @@ import json
 from zai_codex_helper.backends.base import ConfigBackend
 from zai_codex_helper.services.paths import Paths
 
-__all__ = ["JsonBackend", "deep_merge"]
+__all__ = ["JsonBackend", "deep_merge", "merge_model_list"]
+
+#: The object key in ``models_cache.json`` whose value is a LIST of model entries
+#: (the SPIKE deliverable, D-98 / SC-4). The real ``~/.codex/models_cache.json``
+#: top level is ``{"fetched_at", "etag", "client_version", "models"}``; only the
+#: ``models`` key is list-shaped. ``write_canonical`` routes this key through
+#: :func:`merge_model_list` (list-aware, replace-by-slug) instead of
+#: :func:`deep_merge`'s list-overwrite, so the user's existing entries survive.
+#:
+#: Kept as a module constant (not a magic literal at the call site) so the surgical
+#: override in :meth:`JsonBackend.write_canonical` names exactly one key.
+_MODELS_KEY = "models"
+
+
+def merge_model_list(
+    existing: list, override_entries: list, key: str = "slug"
+) -> list:
+    """List-aware merge for ``models_cache.json``'s ``models`` field (D-98, SC-4).
+
+    The real ``~/.codex/models_cache.json`` ``models`` value is a LIST of dicts,
+    each keyed by its ``slug`` field (e.g. ``{"slug": "gpt-5.5", ...}``). The
+    existing :func:`deep_merge` OVERWRITES lists wholesale (its documented
+    contract: "lists are NOT element-merged, they are overwritten"), so a
+    ``write_canonical({"models": [glm_entry]})`` call would CLOBBER the user's
+    existing 5 models — a data-loss bug (T-15-06). This helper is the
+    list-aware path that fixes it.
+
+    Semantics (the D-98 / SC-4 non-clobbering mandate):
+
+    - For each entry in ``existing``: if NO override entry has the same ``key``
+      value, KEEP it as-is; if an override entry matches, REPLACE it with the
+      override entry WHOLESALE (the override wins at the entry level, mirroring
+      deep_merge's leaf semantics — the override is authoritative for that slug).
+    - After iterating ``existing``, APPEND any override entries whose ``key``
+      value was NOT in ``existing`` (the new slugs, e.g. glm-5.2), in their
+      original order.
+    - The returned list is deterministic: existing order preserved, new entries
+      appended last (which makes the byte-snapshot idempotence test stable).
+    - Purity: returns a NEW list; does NOT mutate ``existing`` or
+      ``override_entries``.
+
+    Args:
+        existing: The current ``models`` list (e.g. the user's 5 models). Must be
+            a ``list``.
+        override_entries: The new entries to merge in (e.g. ``[GLM_52_ENTRY]``).
+            Must be a ``list``.
+        key: The dict field used to match entries across the two lists. Defaults
+            to ``"slug"`` (the field Codex keys model entries by). An override
+            entry REPLACES the existing entry with the same ``key`` value; an
+            override entry whose ``key`` value is absent in ``existing`` is
+            APPENDED.
+
+    Returns:
+        A NEW ``list``: existing entries (preserved or replaced-by-key) in their
+        original order, followed by new override entries (those whose ``key``
+        value was not in ``existing``) in their original order.
+
+    Raises:
+        TypeError: if either ``existing`` or ``override_entries`` is not a
+            ``list``. Mirrors :func:`deep_merge`'s defensive contract — a caller
+            that passes a dict/string where a list is expected fails loudly, not
+            silently.
+    """
+    if not isinstance(existing, list):
+        raise TypeError(
+            f"merge_model_list(existing, ...) requires existing to be a list, "
+            f"got {type(existing).__name__}"
+        )
+    if not isinstance(override_entries, list):
+        raise TypeError(
+            f"merge_model_list(..., override_entries) requires override_entries "
+            f"to be a list, got {type(override_entries).__name__}"
+        )
+
+    # Index the override entries by their `key` value for O(1) lookups. Built
+    # once; read-only. Non-dict / key-less entries in the override are skipped
+    # (defensive — a malformed override must not crash the merge).
+    override_by_key = {
+        entry[key]: entry
+        for entry in override_entries
+        if isinstance(entry, dict) and key in entry
+    }
+
+    # The set of key values already present in `existing` — used to decide which
+    # override entries are NEW (must be appended) vs. REPLACEMENTS (consumed in
+    # Pass 1). Mutable: extended in Pass 2 so a duplicate slug WITHIN the
+    # override is appended only once.
+    existing_keys = {
+        entry[key] for entry in existing if isinstance(entry, dict) and key in entry
+    }
+
+    # Pass 1: walk `existing`, replacing in-place where an override matches. We
+    # build a NEW list (never mutate the caller's `existing`); the override entry
+    # wholesale-replaces the matching existing entry (deep_merge leaf semantics
+    # — the override is authoritative for that slug). Existing order is preserved.
+    result: list = []
+    for entry in existing:
+        if (
+            isinstance(entry, dict)
+            and key in entry
+            and entry[key] in override_by_key
+        ):
+            result.append(override_by_key[entry[key]])
+        else:
+            result.append(entry)
+
+    # Pass 2: append override entries whose key was NOT in `existing` (the new
+    # slugs, e.g. glm-5.2), in their original order. Deterministic: new entries
+    # always go last — which makes the byte-snapshot idempotence test stable.
+    for entry in override_entries:
+        if isinstance(entry, dict) and key in entry and entry[key] not in existing_keys:
+            result.append(entry)
+            existing_keys.add(entry[key])
+    return result
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -205,17 +318,31 @@ class JsonBackend(ConfigBackend):
            ``{}``).
         3. Compute ``merged = deep_merge(current, content)`` — existing keys
            preserved, new keys added, conflicting leaves overwritten.
-        4. Serialize via ``json.dumps(merged, indent=2)`` — 2-space pretty-print;
+        4. **List-aware override for the ``models`` key (SC-4 / D-98, Phase 15):**
+           if BOTH ``current`` and ``content`` have a ``models`` key and BOTH
+           values are lists, OVERRULE the deep_merge result for that single key
+           with ``merge_model_list(current['models'], content['models'])``.
+           ``models_cache.json``'s ``models`` field is a LIST of dicts keyed by
+           ``slug``; a wholesale list-overwrite (deep_merge's default — "lists
+           are NOT element-merged, they are overwritten") would CLOBBER the
+           user's existing model entries. ``merge_model_list`` replaces-by-slug
+           and appends new slugs, preserving every existing entry (the D-98
+           non-clobbering mandate). This is SURGICAL: every other key
+           (``fetched_at`` / ``etag`` / ``client_version`` / any future
+           dict-shaped key) still uses deep_merge, so provenance metadata and
+           unrelated fields are untouched.
+        5. Serialize via ``json.dumps(merged, indent=2)`` — 2-space pretty-print;
            key order is preserved (``sort_keys`` left False so the user's
            existing key order survives — the lossless-friendly choice, and what
            makes the byte-snapshot idempotence test stable across runs).
-        5. Route the payload through ``self._write_via_atomic(serialized, mode)``
+        6. Route the payload through ``self._write_via_atomic(serialized, mode)``
            (D-29 structural — never call ``atomic_write`` directly; never call
            ``backup_once`` here, the higher layer gates it).
 
         Args:
             content: The dict to merge IN (the override — e.g. Phase 15's
-                ``glm-5.2`` entry). Must be a ``dict``.
+                ``glm-5.2`` entry wrapped as ``{"models": [GLM_52_ENTRY]}``).
+                Must be a ``dict``.
             mode: ``None`` (default) or an explicit integer mode. ``mode=None``
                 passes through to ``atomic_write``, which yields ``0o600`` from
                 the tempfile (D-DEFERRED-01). ``models_cache.json`` holds no
@@ -236,5 +363,19 @@ class JsonBackend(ConfigBackend):
 
         current = self.read()
         merged = deep_merge(current, content)
+        # SC-4 / D-98 (Phase 15): the `models` key is a LIST keyed by `slug`.
+        # deep_merge would overwrite it wholesale (clobbering the user's entries);
+        # merge_model_list replaces-by-slug and appends new slugs instead. This
+        # surgical override fires ONLY when both sides have a list at `_MODELS_KEY`
+        # — every other key keeps deep_merge's contract.
+        if (
+            _MODELS_KEY in current
+            and _MODELS_KEY in content
+            and isinstance(current[_MODELS_KEY], list)
+            and isinstance(content[_MODELS_KEY], list)
+        ):
+            merged[_MODELS_KEY] = merge_model_list(
+                current[_MODELS_KEY], content[_MODELS_KEY]
+            )
         serialized = json.dumps(merged, indent=2)
         self._write_via_atomic(serialized, mode)
