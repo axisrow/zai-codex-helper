@@ -28,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Dependency Detection** - `shutil.which`-based detection of Go / brew / Moon Bridge binary with offer-to-install consent (completed 2026-06-29)
 - [x] **Phase 11: Moon Bridge Install (build-from-source)** - Go version check → brew bootstrap → pinned-SHA clone → `go build` → `chmod 0755` (HIGHEST research risk) (completed 2026-06-29)
 - [x] **Phase 12: CLI `setup` (onboarding orchestrator)** - Interactive sequencer over all sub-operations, scriptable with `--yes`/`--no-input`, idempotent (completed 2026-06-30)
-- [ ] **Phase 13: Service Lifecycle** - `install-service`/`uninstall-service` LaunchAgent pair sharing a plist Label constant
+- [x] **Phase 13: Service Lifecycle** - `install-service`/`uninstall-service` LaunchAgent pair sharing a plist Label constant (completed 2026-06-30)
 - [ ] **Phase 14: `doctor` (diagnostic pipeline)** - Ordered chain checks with colored markers and "To fix:" guidance (built last)
 - [ ] **Phase 15: Polish, Release Hardening & models_cache Spike** - `--dry-run`, `restore`, secrets review, wheel-install CI, e2e harness, gated models_cache schema spike
 
@@ -264,9 +264,10 @@ Plans:
   4. Post-install verification confirms the service via `launchctl print` + a port probe, not just a zero exit code
 
 **Notes**: Research flag MEDIUM — confirm Codex Desktop App config inheritance (PROJECT.md "new Terra") as a manual acceptance item, not an autotest. Validate `bootout` failure modes on Sonoma+.
-**Plans**: 1 plan
+**Plans**: 1/1 plans complete
 Plans:
-- [ ] 13-01-PLAN.md — install-service / uninstall-service matched pair (services/lifecycle.py + cli handlers), shared Label, mocked-runner unit tests
+
+- [x] 13-01-PLAN.md — install-service / uninstall-service matched pair (services/lifecycle.py + cli handlers), shared Label, mocked-runner unit tests
 
 ### Phase 14: `doctor` (diagnostic pipeline)
 
@@ -319,6 +320,6 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 10. Dependency Detection | 1/1 | Complete    | 2026-06-29 |
 | 11. Moon Bridge Install (build-from-source) | 1/1 | Complete    | 2026-06-29 |
 | 12. CLI setup (onboarding orchestrator) | 1/1 | Complete    | 2026-06-30 |
-| 13. Service Lifecycle | 0/0 | Not started | - |
+| 13. Service Lifecycle | 1/1 | Complete   | 2026-06-30 |
 | 14. doctor (diagnostic pipeline) | 0/0 | Not started | - |
 | 15. Polish, Release Hardening & models_cache Spike | 0/0 | Not started | - |

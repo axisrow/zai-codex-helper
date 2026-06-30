@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 13
-current_phase_name: `install-service` / `uninstall-service`
+current_phase_name: service-lifecycle
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-06-30T03:01:44.277Z"
+last_updated: "2026-06-30T03:41:29.146Z"
 last_activity: 2026-06-30
-last_activity_desc: Phase 12 complete, transitioned to Phase 13
+last_activity_desc: Phase 13 execution started
 progress:
   total_phases: 15
   completed_phases: 12
-  total_plans: 17
+  total_plans: 18
   completed_plans: 17
   percent: 80
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** One command (`use zai`) makes Z.ai (`glm-5.2 xhigh`) the default Codex provider, and one command (`use openai`) reverts to OpenAI — without hand-editing TOML/YAML/shell files.
-**Current focus:** Phase 12 — cli-setup
+**Current focus:** Phase 13 — service-lifecycle
 
 ## Current Position
 
-Phase: 13 — Service Lifecycle (`install-service` / `uninstall-service`)
-Plan: Not started
-Status: Executing Phase 12
-Last activity: 2026-06-30 — Phase 12 complete, transitioned to Phase 13
+Phase: 13 (service-lifecycle) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 13
+Last activity: 2026-06-30 — Phase 13 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
