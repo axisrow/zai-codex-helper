@@ -73,9 +73,7 @@ __all__ = ["JsonBackend", "deep_merge", "merge_model_list"]
 _MODELS_KEY = "models"
 
 
-def merge_model_list(
-    existing: list, override_entries: list, key: str = "slug"
-) -> list:
+def merge_model_list(existing: list, override_entries: list, key: str = "slug") -> list:
     """List-aware merge for ``models_cache.json``'s ``models`` field (D-98, SC-4).
 
     The real ``~/.codex/models_cache.json`` ``models`` value is a LIST of dicts,
@@ -156,11 +154,7 @@ def merge_model_list(
     # — the override is authoritative for that slug). Existing order is preserved.
     result: list = []
     for entry in existing:
-        if (
-            isinstance(entry, dict)
-            and key in entry
-            and entry[key] in override_by_key
-        ):
+        if isinstance(entry, dict) and key in entry and entry[key] in override_by_key:
             result.append(override_by_key[entry[key]])
         else:
             result.append(entry)

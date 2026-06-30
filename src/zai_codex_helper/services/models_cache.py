@@ -216,7 +216,11 @@ def compute_glm52_merged_text(paths: Paths) -> str:
         The would-be on-disk JSON text (2-space indent, key order preserved),
         matching what :func:`update_models_cache` would produce.
     """
-    from zai_codex_helper.backends.json_backend import _MODELS_KEY, deep_merge, merge_model_list
+    from zai_codex_helper.backends.json_backend import (
+        _MODELS_KEY,
+        deep_merge,
+        merge_model_list,
+    )
 
     backend = JsonBackend(paths)
     current = backend.read()

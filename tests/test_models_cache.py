@@ -104,7 +104,10 @@ def _glm_entry(context_window: int = 200000) -> dict:
                 "effort": "medium",
                 "description": "Balances speed and reasoning depth for everyday tasks",
             },
-            {"effort": "high", "description": "Greater reasoning depth for complex problems"},
+            {
+                "effort": "high",
+                "description": "Greater reasoning depth for complex problems",
+            },
             {
                 "effort": "xhigh",
                 "description": "Extra high reasoning depth for complex problems",
