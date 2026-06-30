@@ -424,14 +424,26 @@ def test_yes_flag_still_parsed():
 
 
 @pytest.mark.unit
-def test_doctor_install_uninstall_remain_stubs():
-    """doctor / install-service / uninstall-service STILL resolve to stub closures.
+def test_doctor_remains_stub_install_uninstall_are_real():
+    """Only ``doctor`` is still a stub; install/uninstall are real handlers.
 
-    D-82: Phase 12 only swaps ``setup``; the three later commands stay stubs
-    until their phases (13/14).
+    D-82: Phase 12 swapped ``setup``; Phase 13 (D-87) swapped
+    ``install-service``/``uninstall-service`` to real
+    ``_handle_install_service``/``_handle_uninstall_service`` handlers. Only
+    ``doctor`` stays a stub until Phase 14.
     """
-    for name in ("doctor", "install-service", "uninstall-service"):
+    # install-service / uninstall-service → real Phase 13 handlers.
+    for name, expected in (
+        ("install-service", "_handle_install_service"),
+        ("uninstall-service", "_handle_uninstall_service"),
+    ):
         args = build_parser().parse_args([name])
-        assert args.func.__name__ == "handler", (
-            f"{name} should still be a stub closure, got {args.func.__name__}"
+        assert args.func.__name__ == expected, (
+            f"{name} should resolve to {expected}, got {args.func.__name__}"
         )
+
+    # doctor → still a stub closure (Phase 14).
+    args = build_parser().parse_args(["doctor"])
+    assert args.func.__name__ == "handler", (
+        f"doctor should still be a stub closure, got {args.func.__name__}"
+    )
