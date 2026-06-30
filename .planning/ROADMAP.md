@@ -301,8 +301,13 @@ Plans:
   3. CI installs the built wheel and runs `--help` + the smoke test on Python 3.10–3.13; unit + integration + smoke run in CI, e2e (live `codex exec` through Z.ai) is excluded from CI and runs locally
   4. The `models_cache.json` update (silencing the `glm-5.2` metadata warning) is implemented only after verifying the real schema, with `model_catalog_json` evaluated as the non-clobberable alternative
 
-**Notes**: Research flag HIGH for the models_cache spike — exact schema is the #1 research gap (LOW confidence). Must verify against a real `~/.codex/models_cache.json` from the author's machine before implementing.
-**Plans**: TBD
+**Notes**: Research flag HIGH for the models_cache spike — exact schema is the #1 research gap (LOW confidence). Must verify against a real `~/.codex/models_cache.json` from the author's machine before implementing. RESOLVED during planning: CONTEXT D-95..D-100 lock the hardening scope; the real `~/.codex/models_cache.json` (178KB, 5 models, glm-5.2 absent) was INSPECTED — schema is `{"fetched_at", "etag", "client_version", "models": [LIST keyed by "slug"]}`, so the naive `deep_merge` would CLOBBER the list; Plan 02 adds a list-aware merge (replace-by-slug, preserve-existing). `model_catalog_json` is NOT present in the real file (evaluated + documented as not-used per D-98).
+**Plans**: 2/2 plans complete
+
+Plans:
+
+- [ ] 15-01-PLAN.md — --dry-run real diff preview (D-95/CONF-07) + secrets hardening grep audit/.gitignore/pre-commit (D-96/SECR-03) + CI wheel-install matrix 3.10-3.13 (D-97/TEST-05) + e2e harness (TEST-04)
+- [ ] 15-02-PLAN.md — models_cache glm-5.2 entry via list-aware JsonBackend merge, spike-documented schema, setup wiring (D-98/SEC-02)
 
 ## Progress
 
