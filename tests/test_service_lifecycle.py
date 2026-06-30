@@ -573,21 +573,16 @@ def test_parser_uninstall_service_routes_to_real_handler():
 
 
 @pytest.mark.unit
-def test_parser_doctor_remains_a_stub():
-    """Only ``doctor`` remains a stub (Phase 14); its help text still says stub."""
+def test_parser_doctor_routes_to_real_handler():
+    """``parse_args(["doctor"]).func is _handle_doctor`` (Phase 14, D-89).
+
+    Phase 14 made ``doctor`` the SEVENTH real (non-stub) subcommand — the LAST
+    Phase 1 stub to become real. The Phase 1 stub set is now empty.
+    """
     from zai_codex_helper.cli import parser as cli_parser
 
     args = cli_parser.build_parser().parse_args(["doctor"])
-    # The stub handler prints "doctor: not implemented in this phase".
-    import contextlib
-    import io
-
-    buf = io.StringIO()
-    with contextlib.redirect_stderr(buf):
-        rc = args.func(args)
-    assert rc == 0
-    assert "doctor" in buf.getvalue()
-    assert "not implemented" in buf.getvalue()
+    assert args.func is cli_parser._handle_doctor
 
 
 @pytest.mark.unit
