@@ -48,10 +48,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Service Lifecycle
 
-- [ ] **SERV-01**: `install-service` создаёт LaunchAgent (`~/Library/LaunchAgents/`, современный `launchctl bootstrap gui/<UID>`, `KeepAlive`/`RunAtLoad`, абсолютный путь к binary)
-- [ ] **SERV-02**: `uninstall-service` (`launchctl bootout` + удаление plist; idempotent, graceful EIO/"already booted out")
-- [ ] **SERV-03**: `install-service`/`uninstall-service` делят общий plist Label constant (не осиротят агент)
-- [ ] **SERV-04**: Post-install верификация (`launchctl print` + port probe, не только exit 0)
+- [x] **SERV-01**: `install-service` создаёт LaunchAgent (`~/Library/LaunchAgents/`, современный `launchctl bootstrap gui/<UID>`, `KeepAlive`/`RunAtLoad`, абсолютный путь к binary)
+- [x] **SERV-02**: `uninstall-service` (`launchctl bootout` + удаление plist; idempotent, graceful EIO/"already booted out")
+- [x] **SERV-03**: `install-service`/`uninstall-service` делят общий plist Label constant (не осиротят агент)
+- [x] **SERV-04**: Post-install верификация (`launchctl print` + port probe, не только exit 0)
 
 ### Dependency Detection & Moon Bridge Install
 
@@ -139,10 +139,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DIAG-02 | Phase 14 | Pending |
 | DIAG-03 | Phase 14 | Pending |
 | DIAG-04 | Phase 14 | Pending |
-| SERV-01 | Phase 13 | Pending |
-| SERV-02 | Phase 13 | Pending |
-| SERV-03 | Phase 13 | Pending |
-| SERV-04 | Phase 13 | Pending |
+| SERV-01 | Phase 13 | Complete |
+| SERV-02 | Phase 13 | Complete |
+| SERV-03 | Phase 13 | Complete |
+| SERV-04 | Phase 13 | Complete |
 | DEPS-01 | Phase 10 | Complete |
 | DEPS-02 | Phase 10 | Complete |
 | DEPS-03 | Phase 11 | Complete |
