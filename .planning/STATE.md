@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 14
-current_phase_name: diagnostic pipeline
+current_phase_name: doctor
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-06-30T04:16:06.294Z"
+last_updated: "2026-06-30T04:40:13.626Z"
 last_activity: 2026-06-30
-last_activity_desc: Phase 13 complete, transitioned to Phase 14
+last_activity_desc: Phase 14 execution started
 progress:
   total_phases: 15
   completed_phases: 13
-  total_plans: 18
+  total_plans: 19
   completed_plans: 18
   percent: 87
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** One command (`use zai`) makes Z.ai (`glm-5.2 xhigh`) the default Codex provider, and one command (`use openai`) reverts to OpenAI — without hand-editing TOML/YAML/shell files.
-**Current focus:** Phase 13 — service-lifecycle
+**Current focus:** Phase 14 — doctor
 
 ## Current Position
 
-Phase: 14 — `doctor` (diagnostic pipeline)
-Plan: Not started
-Status: Executing Phase 13
-Last activity: 2026-06-30 — Phase 13 complete, transitioned to Phase 14
+Phase: 14 (doctor) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 14
+Last activity: 2026-06-30 — Phase 14 execution started
 
 Progress: [░░░░░░░░░░] 0%
 

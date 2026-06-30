@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11: Moon Bridge Install (build-from-source)** - Go version check → brew bootstrap → pinned-SHA clone → `go build` → `chmod 0755` (HIGHEST research risk) (completed 2026-06-29)
 - [x] **Phase 12: CLI `setup` (onboarding orchestrator)** - Interactive sequencer over all sub-operations, scriptable with `--yes`/`--no-input`, idempotent (completed 2026-06-30)
 - [x] **Phase 13: Service Lifecycle** - `install-service`/`uninstall-service` LaunchAgent pair sharing a plist Label constant (completed 2026-06-30)
-- [ ] **Phase 14: `doctor` (diagnostic pipeline)** - Ordered chain checks with colored markers and "To fix:" guidance (built last)
+- [x] **Phase 14: `doctor` (diagnostic pipeline)** - Ordered chain checks with colored markers and "To fix:" guidance (built last) (completed 2026-06-30)
 - [ ] **Phase 15: Polish, Release Hardening & models_cache Spike** - `--dry-run`, `restore`, secrets review, wheel-install CI, e2e harness, gated models_cache schema spike
 
 ## Phase Details
@@ -283,9 +283,10 @@ Plans:
   4. Output uses colored `[✓]`/`[!]`/`[✗]` markers with a "To fix:" line per failure, and exits non-zero only on `✗`
 
 **Notes**: Research flag LOW — flutter/brew/rustup doctor patterns are well-established.
-**Plans**: 1 plan
+**Plans**: 1/1 plans complete
 Plans:
-- [ ] 14-01-PLAN.md — run_doctor ordered 9-check pipeline + CheckResult + ANSI color helpers + _handle_doctor wiring (pytest-httpserver + mocked runner)
+
+- [x] 14-01-PLAN.md — run_doctor ordered 9-check pipeline + CheckResult + ANSI color helpers + _handle_doctor wiring (pytest-httpserver + mocked runner)
 
 ### Phase 15: Polish, Release Hardening & models_cache Spike
 
@@ -323,5 +324,5 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 11. Moon Bridge Install (build-from-source) | 1/1 | Complete    | 2026-06-29 |
 | 12. CLI setup (onboarding orchestrator) | 1/1 | Complete    | 2026-06-30 |
 | 13. Service Lifecycle | 1/1 | Complete    | 2026-06-30 |
-| 14. doctor (diagnostic pipeline) | 0/0 | Not started | - |
+| 14. doctor (diagnostic pipeline) | 1/1 | Complete   | 2026-06-30 |
 | 15. Polish, Release Hardening & models_cache Spike | 0/0 | Not started | - |
