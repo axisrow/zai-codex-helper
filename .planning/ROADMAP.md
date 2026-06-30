@@ -302,11 +302,15 @@ Plans:
   4. The `models_cache.json` update (silencing the `glm-5.2` metadata warning) is implemented only after verifying the real schema, with `model_catalog_json` evaluated as the non-clobberable alternative
 
 **Notes**: Research flag HIGH for the models_cache spike — exact schema is the #1 research gap (LOW confidence). Must verify against a real `~/.codex/models_cache.json` from the author's machine before implementing. RESOLVED during planning: CONTEXT D-95..D-100 lock the hardening scope; the real `~/.codex/models_cache.json` (178KB, 5 models, glm-5.2 absent) was INSPECTED — schema is `{"fetched_at", "etag", "client_version", "models": [LIST keyed by "slug"]}`, so the naive `deep_merge` would CLOBBER the list; Plan 02 adds a list-aware merge (replace-by-slug, preserve-existing). `model_catalog_json` is NOT present in the real file (evaluated + documented as not-used per D-98).
-**Plans**: 2/2 plans complete
+**Plans**: 1/2 plans executed
 
 Plans:
+**Wave 1**
 
-- [ ] 15-01-PLAN.md — --dry-run real diff preview (D-95/CONF-07) + secrets hardening grep audit/.gitignore/pre-commit (D-96/SECR-03) + CI wheel-install matrix 3.10-3.13 (D-97/TEST-05) + e2e harness (TEST-04)
+- [x] 15-01-PLAN.md — --dry-run real diff preview (D-95/CONF-07) + secrets hardening grep audit/.gitignore/pre-commit (D-96/SECR-03) + CI wheel-install matrix 3.10-3.13 (D-97/TEST-05) + e2e harness (TEST-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 15-02-PLAN.md — models_cache glm-5.2 entry via list-aware JsonBackend merge, spike-documented schema, setup wiring (D-98/SEC-02)
 
 ## Progress
@@ -330,4 +334,4 @@ Phases execute in numeric order: 1 → 2 → 3 → ... → 15
 | 12. CLI setup (onboarding orchestrator) | 1/1 | Complete    | 2026-06-30 |
 | 13. Service Lifecycle | 1/1 | Complete    | 2026-06-30 |
 | 14. doctor (diagnostic pipeline) | 1/1 | Complete    | 2026-06-30 |
-| 15. Polish, Release Hardening & models_cache Spike | 0/0 | Not started | - |
+| 15. Polish, Release Hardening & models_cache Spike | 1/2 | In Progress|  |

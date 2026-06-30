@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 15
-current_phase_name: Polish, Release Hardening & models_cache Spike
+current_phase_name: polish-release-hardening
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-06-30T05:22:27.014Z"
+last_updated: "2026-06-30T05:55:17.604Z"
 last_activity: 2026-06-30
-last_activity_desc: Phase 14 complete, transitioned to Phase 15
+last_activity_desc: Phase 15 execution started
 progress:
   total_phases: 15
   completed_phases: 14
-  total_plans: 19
+  total_plans: 21
   completed_plans: 19
-  percent: 93
+  percent: 90
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** One command (`use zai`) makes Z.ai (`glm-5.2 xhigh`) the default Codex provider, and one command (`use openai`) reverts to OpenAI — without hand-editing TOML/YAML/shell files.
-**Current focus:** Phase 14 — doctor
+**Current focus:** Phase 15 — polish-release-hardening
 
 ## Current Position
 
-Phase: 15 — Polish, Release Hardening & models_cache Spike
-Plan: Not started
-Status: Executing Phase 14
-Last activity: 2026-06-30 — Phase 14 complete, transitioned to Phase 15
+Phase: 15 (polish-release-hardening) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 15
+Last activity: 2026-06-30 — Phase 15 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
