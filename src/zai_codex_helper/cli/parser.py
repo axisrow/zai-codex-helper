@@ -526,7 +526,10 @@ def _handle_uninstall_service(args: argparse.Namespace) -> int:
     from zai_codex_helper.services.paths import Paths
 
     paths = Paths.default()
-    return uninstall_service(paths)
+    # Phase 15 (D-95): forward the root --dry-run flag (symmetric with
+    # install-service) so `uninstall-service --dry-run` prints a summary and
+    # does NOT really bootout the agent + delete the plist.
+    return uninstall_service(paths, dry_run=getattr(args, "dry_run", False))
 
 
 def _handle_setup(args: argparse.Namespace) -> int:

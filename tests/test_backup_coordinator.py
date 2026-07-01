@@ -165,6 +165,43 @@ def test_backup_once_bak_is_sibling_not_in_backup_dir(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# T4a2 — never clobber an existing .bak on the per-file-sentinel upgrade path
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_backup_once_never_clobbers_existing_bak(tmp_path):
+    """Upgrade path: an existing ``.bak`` is preserved, sentinel is (re)written.
+
+    Regression: the sentinel migrated from a GLOBAL gate to a PER-FILE gate, but
+    the ``.bak`` filename is unchanged. A user who ran the OLD version has the
+    ORIGINAL ``.bak`` + a live config.toml already MUTATED, but only the OLD
+    global sentinel (which the new per-file check does not recognize). Without a
+    guard, backup_once would re-copy the MUTATED live file over the good ``.bak``
+    — destroying the only rollback copy. The guard adopts the existing ``.bak``
+    untouched and just (re)writes the per-file sentinel.
+    """
+    paths = Paths.from_home(tmp_path)
+    # Live file is already the MUTATED state (old version ran + patched it).
+    _seed_config(paths, b"MUTATED_BY_OLD_VERSION")
+    backend = _PathOnly(paths.config_toml)
+    bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
+    sentinel = paths.codex_dir / (paths.config_toml.name + SENTINEL_NAME)
+
+    # The ORIGINAL .bak from the old version — must NOT be clobbered.
+    paths.codex_dir.mkdir(parents=True, exist_ok=True)
+    bak.write_bytes(b"ORIGINAL_PRE_MUTATION")
+    # Only the OLD global sentinel exists (per-file sentinel absent).
+    (paths.codex_dir / SENTINEL_NAME).write_bytes(b"backed-up\n")
+    assert not sentinel.exists()
+
+    BackupCoordinator.backup_once(paths, backend)
+
+    # The good original .bak survives (NOT overwritten with the mutated live).
+    assert bak.read_bytes() == b"ORIGINAL_PRE_MUTATION"
+    # The per-file sentinel is now written so future runs short-circuit.
+    assert sentinel.exists()
+
+
+# --------------------------------------------------------------------------- #
 # T4b — per-file gate: one file's backup does NOT starve another's (regression)
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit

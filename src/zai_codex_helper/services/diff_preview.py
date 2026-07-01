@@ -32,6 +32,7 @@ no-write guarantee, pinned by the byte-identical HOME snapshot tests in
 from __future__ import annotations
 
 import difflib
+import hashlib
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -111,6 +112,16 @@ def compute_diff(path: Path, target_text: str) -> str:
     else:
         current_text = ""
 
+    return _diff_texts(path, current_text, target_text)
+
+
+def _diff_texts(path: Path, current_text: str, target_text: str) -> str:
+    """Diff two in-memory texts (the current/target split of :func:`compute_diff`).
+
+    Extracted so secrets-bearing callers (:func:`preview_yml_change`) can redact
+    BOTH the current and target sides BEFORE diffing — otherwise the removed
+    ``api_key:`` line would leak the user's existing key value (T-15-01).
+    """
     # The (no changes) sentinel: target equals current (byte-for-byte as text).
     # Also covers the empty/empty case (creating an empty file is a no-op).
     if target_text == current_text:
@@ -171,6 +182,27 @@ def redact_secrets(text: str) -> str:
     )
 
 
+def _redact_key_lines(text: str) -> str:
+    """Redact secret lines to a non-reversible per-value fingerprint (T-15-01).
+
+    Like :func:`redact_secrets` but replaces the value with
+    ``<redacted:XXXXXXXX>`` where ``XXXXXXXX`` is the first 8 hex chars of the
+    value's sha256. Used ONLY for the both-sides dry-run diff: a genuine key
+    change stays visible (different fingerprints → a diff line) while the real
+    value never reaches stdout. The fingerprint is non-reversible; 32 bits is
+    ample to distinguish two keys in a preview (not a security boundary — the
+    value is already gone). Identical keys → identical fingerprint → the line
+    drops out of the diff (correct: nothing changed).
+    """
+
+    def _sub(m: re.Match) -> str:
+        value = m.group(0)[len(m.group(1)) :].strip()
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+        return f"{m.group(1)} {_REDACTED_PLACEHOLDER[:-1]}:{digest}>"
+
+    return _ZAI_API_KEY_LINE_RE.sub(_sub, text)
+
+
 def preview_yml_change(
     path: Path,
     body: dict,
@@ -192,4 +224,15 @@ def preview_yml_change(
         default_flow_style=False,
         allow_unicode=True,
     )
-    print_fn(compute_diff(path, redact_secrets(serialized)))
+    # Redact BOTH sides before diffing (T-15-01 / SECR-03). compute_diff reads
+    # the CURRENT on-disk yml raw, so redacting only the target would still emit
+    # the removed `api_key:` line carrying the user's EXISTING real secret. We
+    # redact the current file's key too and diff redacted-vs-redacted so neither
+    # the old nor the new key value ever reaches stdout. The redaction is a short
+    # non-reversible sha256 fingerprint (not the flat `<redacted>`), so a genuine
+    # key CHANGE still surfaces as a diff line (`<redacted:ab12cd34>` →
+    # `<redacted:99ff00aa>`) instead of collapsing to a misleading "(no changes)".
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
+    redacted_target = _redact_key_lines(serialized)
+    redacted_current = _redact_key_lines(current)
+    print_fn(_diff_texts(path, redacted_current, redacted_target))

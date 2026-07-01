@@ -103,7 +103,8 @@ def test_set_key_dry_run_redacts_and_writes_nothing(tmp_path, monkeypatch, capsy
 
     assert rc == 0
     out = capsys.readouterr().out
-    assert _NEW not in out  # key never reaches stdout
+    assert _NEW not in out  # new key never reaches stdout
+    assert _OLD not in out  # existing key never leaks via the removed diff line
     assert "redacted" in out.lower()
     data = yaml.safe_load(paths.moonbridge_yml.read_text())
     assert data["providers"]["zai"]["api_key"] == _OLD  # file unchanged

@@ -99,6 +99,15 @@ Runner = Callable[..., subprocess.CompletedProcess]
 _ALREADY_BOOTED_OUT_PATTERNS: tuple[str, ...] = (
     "could not find service",
     "input/output error",
+    # Fresh install: the label was never registered, so the pre-bootout in
+    # install_service has nothing to remove. Modern macOS reports this as
+    # rc=3 "Boot-out failed: 3: No such process" — the idempotent SUCCESS
+    # path, NOT an error. Without it, the FIRST-EVER install would raise
+    # before writing the plist. Match ONLY the specific "no such process"
+    # reason, NOT the generic "boot-out failed:" prefix — the latter also
+    # heads REAL failures like "Boot-out failed: 1: Operation not permitted",
+    # which uninstall_service MUST still raise on (threat T-13-05).
+    "no such process",
 )
 
 #: Known launchctl "already loaded" patterns (D-83 — idempotent install).

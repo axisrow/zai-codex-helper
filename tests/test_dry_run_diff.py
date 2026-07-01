@@ -36,6 +36,7 @@ proof (CONF-07).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -243,7 +244,10 @@ def test_setup_dry_run_redacts_api_key_and_writes_nothing(
     # D-77 / T-15-01: the canary NEVER appears in the preview output.
     assert canary not in combined, "API key canary leaked into dry-run output"
     # The redaction seam: the key line (providers.zai.api_key) is redacted.
-    assert "api_key: <redacted>" in combined
+    # The value is replaced by a non-reversible fingerprint (<redacted:XXXXXXXX>)
+    # so a key CHANGE stays visible in a both-sides diff without leaking either
+    # value; a fresh setup (no current file) previews it as an added line.
+    assert re.search(r"api_key: <redacted(:[0-9a-f]{8})?>", combined), combined
 
 
 # =========================================================================== #

@@ -123,9 +123,16 @@ class BackupCoordinator:
 
         # D-28: sibling .bak, NOT inside paths.backup_dir.
         bak = src.parent / (src.name + BAK_SUFFIX)
-        # Crash-safe copy via the Phase 3 primitive (CONF-01). mode=None
-        # preserves the source's existing mode (CLAUDE.md config.toml).
-        atomic_write(bak, src.read_bytes(), mode=None)
+        # NEVER clobber an existing .bak. The .bak is a one-shot snapshot of the
+        # user's ORIGINAL (pre-mutation) file. If one already exists (e.g. a user
+        # who ran an OLD version with the GLOBAL sentinel, which the per-file gate
+        # above does not recognize), re-copying the now-MUTATED source over it
+        # would destroy the only rollback copy. Adopt the existing .bak, just
+        # (re)write the per-file sentinel so future runs short-circuit here.
+        if not bak.exists():
+            # Crash-safe copy via the Phase 3 primitive (CONF-01). mode=None
+            # preserves the source's existing mode (CLAUDE.md config.toml).
+            atomic_write(bak, src.read_bytes(), mode=None)
 
         # Sentinel: existence is the gate. atomic_write (not plain touch)
         # so a crash between copy and sentinel still leaves a consistent
