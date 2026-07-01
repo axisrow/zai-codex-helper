@@ -793,9 +793,9 @@ def test_handle_install_service_delegates_to_services_layer(tmp_path, monkeypatc
         rc = args.func(args)
 
     assert rc == 0
-    # Phase 15 (D-95): the handler now forwards the root --dry-run flag.
-    # Default (no --dry-run) -> dry_run=False, preserving the prior behavior.
-    spy.assert_called_once_with(fake_paths, dry_run=False)
+    # Phase 15 (D-95): the handler forwards the root --dry-run flag; Q2 (#10)
+    # adds the --force flag. Defaults (neither passed) -> dry_run/force False.
+    spy.assert_called_once_with(fake_paths, dry_run=False, force=False)
 
 
 @pytest.mark.unit
@@ -843,3 +843,228 @@ def test_handle_uninstall_service_forwards_dry_run(tmp_path, monkeypatch):
 
     assert rc == 0
     spy.assert_called_once_with(fake_paths, dry_run=True)
+
+
+# ---------------------------------------------------------------------------
+# Q2 / #10 — convergent install_service (no-bounce when converged) + --force
+# ---------------------------------------------------------------------------
+
+
+def _seed_canonical_plist(paths):
+    """Write the canonical plist to disk so _plist_drifted() is False."""
+    from zai_codex_helper.backends.plist import PlistBackend, canonical_plist
+
+    PlistBackend(paths).write_canonical(canonical_plist(paths))
+
+
+@pytest.mark.unit
+def test_install_service_converged_is_noop_no_bounce(tmp_path, monkeypatch):
+    """Already loaded + plist matches canonical → NO bootout/bootstrap (no bounce)."""
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    _seed_canonical_plist(paths)  # on-disk plist == canonical → not drifted
+    _patch_port(monkeypatch, connects=True)  # verify's port probe connects
+    # print (from verify) returns loaded; if any bootout/bootstrap runs, the test
+    # fails on the assertion below.
+    runner, captured = _recording_runner(
+        responses=[_ok(["launchctl", "print"], "state = running")]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    # The ONLY launchctl call is the verify `print` — never bootout/bootstrap.
+    assert not any("bootout" in a for a in argvs), argvs
+    assert not any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_force_bounces_even_when_converged(tmp_path, monkeypatch):
+    """--force reinstalls (bootout+bootstrap) even on a converged, running agent."""
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    _seed_canonical_plist(paths)
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner, force=True)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootout" in a for a in argvs), argvs
+    assert any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_drift_bounces(tmp_path, monkeypatch):
+    """Loaded but the on-disk plist drifted → bootout+bootstrap (re-apply)."""
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    # Seed a DRIFTED plist (not canonical) so _plist_drifted() is True.
+    paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
+    (paths.launchagents_dir / "dev.zai.moonbridge.plist").write_text(
+        "<?xml version='1.0'?><plist><dict><key>Label</key>"
+        "<string>stale</string></dict></plist>",
+        encoding="utf-8",
+    )
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_fresh_not_loaded_bootstraps(tmp_path, monkeypatch):
+    """Not loaded (fresh) → bootstrap runs (convergence gate falls through)."""
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    # No plist on disk → _plist_drifted() is True → the convergence gate is
+    # skipped BEFORE any verify probe; install proceeds straight to bootstrap.
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),  # post-install verify
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_converged_repairs_plist_mode_without_bounce(
+    tmp_path, monkeypatch
+):
+    """Content matches canonical but the plist MODE drifted → repair mode, NO bounce.
+
+    _plist_drifted only compares parsed content, so a plist with canonical keys
+    but a wrong mode (e.g. 0600, which launchd rejects — it requires 0644) would
+    slip through the no-op gate unrepaired. The converged path does a canonical
+    rewrite (atomic write + chmod 0644) WITHOUT bootout/bootstrap: mode is fixed,
+    the running agent is not bounced.
+    """
+    import os
+
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    _seed_canonical_plist(paths)  # canonical content on disk
+    plist = paths.launchagents_dir / "dev.zai.moonbridge.plist"
+    os.chmod(plist, 0o600)  # drift the mode off launchd's required 0644
+    assert (plist.stat().st_mode & 0o777) == 0o600
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[_ok(["launchctl", "print"], "state = running")]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    # Mode repaired to launchd's 0644.
+    assert (plist.stat().st_mode & 0o777) == 0o644
+    # But the service was NOT bounced (no bootout/bootstrap).
+    argvs = [c["argv"] for c in captured]
+    assert not any("bootout" in a for a in argvs), argvs
+    assert not any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_corrupted_plist_self_heals_via_bootstrap(
+    tmp_path, monkeypatch
+):
+    """A truncated/malformed on-disk plist is treated as drifted, not a crash.
+
+    Before the convergence gate, install unconditionally rewrote the plist, so a
+    corrupted file self-healed on the next install. _plist_drifted's read() can
+    raise plistlib.InvalidFileException on malformed bytes — that must be caught
+    and treated as drift (NOT let the exception crash install_service), so the
+    corrupted plist still gets bootout→write→bootstrap.
+    """
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
+    (paths.launchagents_dir / "dev.zai.moonbridge.plist").write_bytes(
+        b"not a plist at all, truncated garbage"
+    )
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootstrap" in a for a in argvs), argvs
+    # The plist on disk is now valid canonical content (self-healed).
+    from zai_codex_helper.backends.plist import PlistBackend, canonical_plist
+
+    assert PlistBackend(paths).read() == canonical_plist(paths)
+
+
+@pytest.mark.unit
+def test_install_service_truncated_xml_plist_self_heals(tmp_path, monkeypatch):
+    """A plist truncated mid-XML-tag self-heals too (round-3 regression).
+
+    plistlib.load() parses XML via the stdlib expat parser: truncating a REAL
+    plist (e.g. an interrupted write) mid-tag raises xml.parsers.expat.ExpatError
+    — a different exception shape than garbage-bytes' InvalidFileException.
+    _plist_drifted must catch BOTH, or a truncated-XML plist crashes instead of
+    self-healing via bootout→write→bootstrap.
+    """
+    import plistlib
+
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
+    from zai_codex_helper.backends.plist import canonical_plist
+
+    full_xml = plistlib.dumps(canonical_plist(paths), fmt=plistlib.FMT_XML)
+    truncated = full_xml[: len(full_xml) // 2]  # cut mid-tag, not garbage bytes
+    (paths.launchagents_dir / "dev.zai.moonbridge.plist").write_bytes(truncated)
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootstrap" in a for a in argvs), argvs

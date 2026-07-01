@@ -63,10 +63,12 @@ TESTABILITY (D-83):
 from __future__ import annotations
 
 import os
+import plistlib
 import socket
 import subprocess
 import sys
 from collections.abc import Callable
+from xml.parsers.expat import ExpatError
 
 # D-85 (SERV-03, load-bearing): import the Label, do NOT re-string it. The
 # ``is`` identity between lifecycle.LAUNCHAGENT_LABEL and backends.plist.LABEL
@@ -187,6 +189,37 @@ def _plist_path(paths: Paths):
     return paths.launchagents_dir / PLIST_FILENAME
 
 
+def _plist_drifted(paths: Paths) -> bool:
+    """True iff the on-disk plist is absent, unreadable, or differs from canonical.
+
+    Convergence check (Q2): a repeat ``install`` should only bounce the running
+    agent when its inputs actually changed (e.g. the binary path moved). We diff
+    the desired canonical plist against what's on disk — a dict compare is enough
+    to catch a moved ProgramArguments / changed KeepAlive. Missing file → drifted
+    (nothing loaded to converge with). Mirrors terraform-style "diff vs actual",
+    NOT an "installed" boolean.
+
+    A truncated/corrupted plist also counts as drifted (not merely "absent"):
+    ``PlistBackend.read()`` raises ``plistlib.InvalidFileException`` on malformed
+    content. Before this convergence gate existed, ``install`` unconditionally
+    rewrote the plist, so a corrupted file self-healed on the next install. The
+    gate must preserve that self-heal — treat a read failure as drift so install
+    falls through to bootout→write→bootstrap instead of crashing.
+    """
+    backend = PlistBackend(paths)
+    if not backend.exists():
+        return True
+    try:
+        on_disk = backend.read()
+    except (plistlib.InvalidFileException, ExpatError, OSError):
+        # plistlib.load() parses XML via the stdlib expat parser: a plist
+        # truncated mid-tag (e.g. an interrupted write) raises ExpatError, NOT
+        # InvalidFileException — both shapes of corruption must self-heal the
+        # same way (fall through to bootout→write→bootstrap), not crash.
+        return True
+    return on_disk != canonical_plist(paths)
+
+
 def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
     """Case-insensitive substring match of ``text`` against any of ``patterns``.
 
@@ -203,6 +236,7 @@ def install_service(
     *,
     runner: Runner = subprocess.run,
     dry_run: bool = False,
+    force: bool = False,
 ) -> int:
     """Install the Moon Bridge LaunchAgent (D-83; SERV-01).
 
@@ -253,10 +287,15 @@ def install_service(
         dry_run: Phase 15 (D-95). When True, print a "would write plist +
             bootstrap + verify" summary and return 0 WITHOUT writing the plist
             or calling ``runner``/launchctl.
+        force: Q2 (#10). When True, skip the convergence check and ALWAYS
+            bootout→write→bootstrap (the pre-#10 behavior). Default False: a
+            repeat install on an already-loaded, non-drifted agent is a no-op
+            that leaves the running service untouched.
 
     Returns:
         0 on success (the agent is registered AND verified loaded), or 0 after
-        printing the dry-run summary when ``dry_run`` is True.
+        printing the dry-run summary when ``dry_run`` is True, or 0 after the
+        convergence no-op when the agent is already loaded + non-drifted.
 
     Raises:
         ZaiCodexHelperError: on non-darwin (platform gate — raised even under
@@ -279,6 +318,27 @@ def install_service(
         return 0
 
     plist_path = _plist_path(paths)
+
+    # 1b. CONVERGENCE (Q2, #10): if the on-disk plist matches canonical AND the
+    #     agent is already loaded, a repeat install is a no-op — do NOT bounce a
+    #     healthy running service (bootout→bootstrap drops in-flight requests).
+    #     Only bounce on real drift (moved binary / changed plist) or --force.
+    #     Keyed on an actual diff, not an "installed" flag. Check the cheap
+    #     plist diff FIRST (no launchctl): if it drifted or is absent (fresh),
+    #     skip the verify probe and fall straight through to bootout→bootstrap.
+    if not force and not _plist_drifted(paths):
+        loaded, _port = verify_service_loaded(paths, runner=runner)
+        if loaded:
+            # Canonical rewrite (atomic write + chmod 0644) WITHOUT bootout/
+            # bootstrap: normalizes file metadata (e.g. a plist mode that drifted
+            # off launchd's required 0644) so "converged" means content AND mode
+            # are canonical — but the running agent is NOT bounced (launchd does
+            # not re-read the file on its own). _plist_drifted only compares
+            # parsed content, so this repair covers the metadata it can't see.
+            PlistBackend(paths).write_canonical(canonical_plist(paths))
+            print("Moon Bridge already installed and running; nothing to do.")
+            print("(use --force to reinstall)")
+            return 0
 
     # 2. bootout any EXISTING registration FIRST (before writing the new plist).
     #    launchd does NOT reload ProgramArguments for an already-bootstrapped

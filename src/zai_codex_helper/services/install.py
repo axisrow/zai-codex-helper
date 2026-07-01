@@ -27,6 +27,7 @@ def install_macro(
     *,
     dry_run: bool = False,
     headless: bool = False,
+    force: bool = False,
 ) -> None:
     """Turn Z.ai ON end-to-end (the Core Value in one call).
 
@@ -34,6 +35,7 @@ def install_macro(
         paths: resolved Paths bundle.
         dry_run: preview each step without writing.
         headless: skip interactive prompts (``--yes`` / ``--no-input``).
+        force: force the LaunchAgent reinstall even when already converged (Q2).
     """
     from zai_codex_helper.services.lifecycle import install_service
     from zai_codex_helper.services.setup import run_setup
@@ -49,8 +51,9 @@ def install_macro(
     #    it shadows a bare `codex` (--profile > config default).
     if not dry_run:
         strip_foreign_codex_function(paths)
-    # 3. Moon Bridge LaunchAgent up.
-    install_service(paths, dry_run=dry_run)
+    # 3. Moon Bridge LaunchAgent up (convergent: a repeat install won't bounce a
+    #    healthy running agent unless the plist drifted or --force).
+    install_service(paths, dry_run=dry_run, force=force)
 
 
 def uninstall_macro(paths: Paths, *, dry_run: bool = False) -> None:
