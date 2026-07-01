@@ -266,3 +266,15 @@ class ShellBackend(ConfigBackend):
         if without_fence.startswith("\n"):
             without_fence = without_fence[1:]
         self._write_via_atomic(without_fence, 0o644)
+
+    def write_raw(self, content: str, mode: int | None = None) -> None:
+        """Atomically write ``content`` as the WHOLE ``.zshrc``, no fence (D-29).
+
+        For callers that rewrite the entire file verbatim — e.g. stripping a
+        foreign ``codex ()`` shim — as opposed to :meth:`write_canonical`, which
+        takes only the fenced-block BODY and wraps it in the markers. Routes
+        through ``self._write_via_atomic`` so this whole-file write, too, goes
+        through the backend (no caller reaches around into ``atomic_write``).
+        ``mode=None`` preserves the file's existing permissions.
+        """
+        self._write_via_atomic(content, mode)

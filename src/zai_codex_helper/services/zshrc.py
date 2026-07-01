@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import re
 
-from zai_codex_helper.backends._atomic import atomic_write
 from zai_codex_helper.backends.shell import ShellBackend
 from zai_codex_helper.services.paths import Paths
 
@@ -83,7 +82,9 @@ def strip_foreign_codex_function(paths: Paths) -> bool:
     if new == text:
         return False
     backend.backup_once()
-    # Write the WHOLE .zshrc (NOT via ShellBackend.write_canonical, which wraps
-    # in the helper's marker fence). mode=None preserves the existing perms.
-    atomic_write(paths.zshrc, new, mode=None)
+    # Write the WHOLE .zshrc through the backend's raw whole-file surface (NOT
+    # write_canonical, which wraps in the helper's marker fence). Routing through
+    # the backend keeps the "no write bypasses a backend" invariant structural;
+    # write_raw's default mode=None preserves the existing perms.
+    backend.write_raw(new)
     return True

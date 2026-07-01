@@ -216,3 +216,39 @@ def test_shell_lands_at_0644(tmp_path):
 
     mode = (tmp_path / ".zshrc").stat().st_mode & 0o777
     assert mode == 0o644, f".zshrc landed at {oct(mode)}, expected 0o644"
+
+
+@pytest.mark.unit
+def test_shell_write_raw_writes_verbatim_no_fence(tmp_path):
+    """``write_raw`` writes the WHOLE text byte-for-byte, adding NO marker fence.
+
+    Unlike ``write_canonical`` (which wraps its arg in the fence), ``write_raw``
+    is the whole-file surface a caller like ``strip_foreign_codex_function`` uses
+    to rewrite the user's .zshrc verbatim — routed through the backend, not a
+    direct ``atomic_write``.
+    """
+    zshrc = tmp_path / ".zshrc"
+    backend = ShellBackend(Paths.from_home(tmp_path))
+    raw = "alias ll='ls -la'\n# user comment\nexport FOO=1\n"
+
+    backend.write_raw(raw)
+
+    written = zshrc.read_text(encoding="utf-8")
+    assert written == raw  # exact bytes, nothing added
+    assert MARKER_START not in written and MARKER_END not in written  # no fence
+
+
+@pytest.mark.unit
+def test_shell_write_raw_mode_none_preserves_existing_perms(tmp_path):
+    """``write_raw(mode=None)`` preserves the file's existing permissions."""
+    import os
+
+    zshrc = tmp_path / ".zshrc"
+    zshrc.write_text("old\n", encoding="utf-8")
+    os.chmod(zshrc, 0o600)
+    backend = ShellBackend(Paths.from_home(tmp_path))
+
+    backend.write_raw("new\n")
+
+    assert zshrc.read_text(encoding="utf-8") == "new\n"
+    assert (zshrc.stat().st_mode & 0o777) == 0o600  # unchanged
