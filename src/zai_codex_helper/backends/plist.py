@@ -1,39 +1,25 @@
-"""``PlistBackend`` — the LaunchAgent plist backend (Phase 9; decisions D-59, D-60, D-61).
+"""``PlistBackend`` — the LaunchAgent plist backend (D-59, D-60, D-61).
 
-This is the concrete :class:`ConfigBackend` for the per-user LaunchAgent at
-``~/Library/LaunchAgents/dev.zai.moonbridge.plist`` — the registration Phase 13's
-``install-service`` will write (and ``uninstall-service`` will ``bootout``).
-launchd is strict and unforgiving, so two invariants are load-bearing here:
+The concrete :class:`ConfigBackend` for the per-user LaunchAgent at
+``~/Library/LaunchAgents/dev.zai.moonbridge.plist``. Two launchd invariants are
+load-bearing:
 
-1. **NO literal ``~`` anywhere in the plist.** launchd does NOT expand ``~``; a
-   ``~/...`` value in ``ProgramArguments`` would make the agent fail to start the
-   binary. Every path is resolved to an ABSOLUTE path off the injected
-   :class:`Paths` (whose ``home`` is already a real ``/...`` filesystem path via
-   :meth:`Paths.from_home` — never a literal ``~``). This is the single most
-   load-bearing correctness invariant for the service (threat T-09-04).
-2. **``Label`` is the unique stable identifier Phase 13's ``launchctl bootout``
-   will target.** It MUST be the exact string ``dev.zai.moonbridge``. A drifted
-   Label would orphan the agent (uninstall could not find it). The constant
-   :data:`LABEL` is the single source of truth; Phase 13 imports it so
-   ``uninstall-service`` always ``bootout``s the exact registration
-   ``install-service`` created (threat T-09-04b; ROADMAP Phase 13 SC-3).
+1. **NO literal ``~`` anywhere in the plist** (threat T-09-04). launchd does not
+   expand ``~``, so every path is resolved ABSOLUTE off the injected
+   :class:`Paths` (its ``home`` is already a real ``/...`` path).
+2. **``Label`` MUST be the exact string ``dev.zai.moonbridge``** (threat
+   T-09-04b; ROADMAP Phase 13 SC-3). A drifted Label orphans the agent, so
+   :data:`LABEL` is the single source of truth uninstall ``bootout``s.
 
-The plist is helper-OWNED (there is no user content to preserve), so
-:meth:`PlistBackend.write_canonical` emits the FULL canonical dict wholesale —
-it does NOT merge into any pre-existing plist (D-60). A caller MAY pass a
-customized plist dict as long as it carries the load-bearing ``Label`` key (a
-plist without ``Label`` is launchd-invalid; the method raises ``ValueError`` —
-threat T-09-04c).
+The plist is helper-OWNED, so :meth:`write_canonical` emits the FULL canonical
+dict wholesale (D-60) — never a merge; a caller-supplied dict must carry
+``Label`` or the method raises ``ValueError`` (threat T-09-04c). ``plistlib`` is
+the stdlib emitter (D-61); output routes through
+:meth:`ConfigBackend._write_via_atomic` (D-29 — no backend bypasses
+``atomic_write``).
 
-Library discipline (D-61, CLAUDE.md): ``plistlib`` is the stdlib plist
-emitter — no new runtime dependency. ``plistlib.dumps(data, fmt=plistlib.FMT_XML)``
-produces canonical Apple XML plist text (``<true/>`` for Python ``True``) which
-is then routed through :meth:`ConfigBackend._write_via_atomic` (D-29 structural
-— no backend bypasses ``atomic_write``).
-
-Scope discipline: this module is the plist-EMISSION primitive only. It does NOT
-call ``launchctl bootstrap``/``bootout`` and does NOT wire the
-``install-service``/``uninstall-service`` commands — that is Phase 13.
+Scope (D-82-style): plist EMISSION only — no ``launchctl`` / no
+``install-service`` wiring (that is ``services/lifecycle.py``).
 """
 
 from __future__ import annotations

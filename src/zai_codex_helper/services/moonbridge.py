@@ -1,49 +1,20 @@
-"""Phase 11 — Moon Bridge build-from-source orchestrator (D-69..D-75).
+"""Build Moon Bridge binary from pinned SHA (D-69..D-75, DEPS-04, D-70..D-74).
 
-This module is the service-layer primitive that composes + runs the exact
-command sequence to build the Moon Bridge binary from a **pinned commit SHA**
-(never ``main``/``HEAD``/``master`` — DEPS-04, D-70) into the user's codex
-directory. It reuses the Phase 10 :func:`~zai_codex_helper.services.deps.detect_go`
-detector for the Go 1.25+ gate and the Phase 2 :class:`Paths` for the binary
-destination; it adds NO new runtime dependencies (stdlib only).
+Builds Moon Bridge from the **pinned commit SHA** (never ``main``/``HEAD``/
+``master``) using Go 1.25+ into ``paths.codex_dir / "moon-bridge"``. The
+``runner`` parameter is the ONLY subprocess seam (D-74) — unit tests inject
+a recording fake for NO real git/go/network runs.
 
-WHAT LIVES HERE (D-69):
+NO VENDORING (D-73, GPL v3): the binary lives on the user filesystem,
+NEVER in the wheel. Every user builds from source.
 
-- :data:`MOONBRIDGE_REPO_URL` / :data:`MOONBRIDGE_PINNED_SHA` — the single
-  reproducibility anchors (DEPS-04). The checkout target is a tagged-release
-  commit, never a moving branch.
-- :func:`build_moonbridge` — the orchestrator. Sequence (D-69 steps 1-6):
-
-  1. Idempotency check (D-72): if the binary exists + is owner-executable AND
-     ``force=False`` -> return immediately, ZERO subprocess calls.
-  2. Go version gate (D-71, D-69 step 2): reuse Phase 10 ``detect_go``; raise
-     :class:`ZaiCodexHelperError` with a brew bootstrap one-liner IN the
-     message when Go is absent, version is unparseable, or ``< 1.25``.
-  3. Clone at pinned SHA (D-69 step 3, D-70): ``git clone`` into a tempdir,
-     then ``git checkout <PINNED_SHA>`` (the constant, never a branch name).
-  4. Build (D-69 step 4): ``go build -o <codex_dir>/moon-bridge ./cmd/moonbridge``
-     with ``cwd=<clone_dir>``.
-  5. chmod (D-69 step 5): ``os.chmod(binary, 0o755)``.
-  6. Cleanup (D-69 step 6): the clone tempdir is removed in a ``finally``
-     block (success OR failure).
-
-- :data:`MOONBRIDGE_BUILD_SUBDIR`, :data:`GO_MIN_MAJOR_MINOR` — module-level
-  knobs cited by the tests; changing the Go floor or the build target is a
-  one-line edit.
-
-NO VENDORING (D-73, GPL v3): this module writes ONLY to
-``paths.codex_dir / "moon-bridge"`` — the binary lives on the user filesystem,
-NEVER under ``src/`` and NEVER in the wheel (``pyproject.toml`` ships only
-``src/zai_codex_helper`` Python source). Every user builds from source.
-
-TESTABILITY (D-74): the ONLY subprocess seam is the ``runner`` parameter
-(default :func:`subprocess.run`); unit tests inject a recording fake so NO
-real git/go/network runs. The optional e2e smoke (``@pytest.mark.e2e``,
-excluded by default) is the sole path that runs the real toolchain.
-
-OUT OF SCOPE: Phase 12 ``setup`` wiring (which CALLS this primitive);
-Phase 13 LaunchAgent / launchctl; Phase 14 ``doctor`` health checks;
-auto-installing Go/brew (NEVER — Phase 10 offer-consent only).
+Sequence (D-69 steps 1-6):
+  1. Idempotency (D-72): skip rebuild if binary exists + executable.
+  2. Go gate (D-71): raise ZaiCodexHelperError if Go < 1.25.
+  3. Clone + checkout pinned SHA (D-70).
+  4. ``go build -o <codex_dir>/moon-bridge ./cmd/moonbridge`` (cwd=clone_dir).
+  5. chmod 0o755 (SC-2).
+  6. Cleanup tempdir (T-11-04).
 """
 
 from __future__ import annotations
@@ -123,20 +94,11 @@ def _parse_go_version(version_line: str | None) -> tuple[int, int] | None:
 
 
 def _assert_go_ready() -> None:
-    """Raise :class:`ZaiCodexHelperError` unless Go 1.25+ is available (D-71, SC-1).
-
-    Reuses the Phase 10 :func:`detect_go` detector. The brew bootstrap
-    one-liner is MESSAGE TEXT ONLY — this function never invokes a
-    system-toolchain install (D-71, DEPS-02; the brew one-liner in the message
-    mirrors Phase 10's ``offer_install`` docstring pattern where surfacing the
-    command to the user is the whole point).
+    """Raise ZaiCodexHelperError unless Go 1.25+ is available (D-71, SC-1).
 
     Raises:
-        ZaiCodexHelperError: when Go is absent, the version is unparseable, or
-            the parsed ``(major, minor)`` is ``< (1, 25)``. The absent/unparseable
-            message contains BOTH the word ``Go`` and the brew one-liner
-            (``brew install go``); the old-version message names the detected
-            version and the 1.25 floor.
+        ZaiCodexHelperError: when Go is absent, unparseable, or < 1.25.
+            Message includes a brew install suggestion (text only, no exec).
     """
     result = detect_go()
     parsed = _parse_go_version(result.version)
@@ -165,30 +127,18 @@ def build_moonbridge(
     force: bool = False,
     runner=subprocess.run,
 ) -> Path:
-    """Build the Moon Bridge binary from the pinned SHA into ``paths.codex_dir`` (D-69).
-
-    The single build primitive Phase 12 ``setup`` calls. Composes + runs the
-    exact command sequence (Go-gate → pinned-SHA clone → ``go build`` → chmod),
-    returning the binary path on success.
+    """Build Moon Bridge binary from pinned SHA into paths.codex_dir (D-69).
 
     Args:
-        paths: injected :class:`Paths` (Phase 2, D-22/D-23). The binary lands at
-            ``paths.codex_dir / "moon-bridge"`` — never a hard-coded ``~/.codex``
-            literal.
-        force: when ``True``, bypass the idempotency skip and rebuild even if a
-            usable binary already exists (e.g. after a SHA bump). Default
-            ``False`` (D-72).
-        runner: the ONLY subprocess seam (D-74). Defaults to
-            :func:`subprocess.run`; unit tests inject a recording fake so NO
-            real git/go/network runs.
+        paths: injected Paths. Binary lands at paths.codex_dir / "moon-bridge".
+        force: when True, rebuild even if binary exists (D-72). Default False.
+        runner: subprocess seam (D-74); tests inject a fake.
 
     Returns:
-        The built binary :class:`Path` (``paths.codex_dir / "moon-bridge"``).
+        The built binary Path.
 
     Raises:
-        ZaiCodexHelperError: if Go is absent / unparseable / ``< 1.25`` (D-71),
-            or if any runner call (clone / checkout / build) fails (D-69 step
-            3-4 wrapping). The clone tempdir is cleaned up in all cases.
+        ZaiCodexHelperError: if Go < 1.25 (D-71) or any clone/build fails.
     """
     binary = paths.moonbridge_binary
 
@@ -218,19 +168,12 @@ def build_moonbridge(
 
 
 def _run_clone_checkout_build(runner, clone_dir: str, binary: Path) -> None:
-    """Run the 3-call sequence (clone → checkout → build) + chmod (D-69 steps 3-5).
-
-    Factored out of :func:`build_moonbridge` so the ``TemporaryDirectory``
-    context body stays linear. Each runner call uses ``check=True`` so a
-    non-zero exit surfaces as :class:`subprocess.CalledProcessError`; each is
-    caught and re-raised as :class:`ZaiCodexHelperError` naming the failed
-    step (D-69 step 3-4 wrapping, D-11 one-error contract).
+    """Run clone → checkout → build + chmod (D-69 steps 3-5, D-74).
 
     Args:
-        runner: the injected subprocess seam (D-74).
-        clone_dir: the tempdir the clone lands in (relative paths in the build
-            step resolve against this via ``cwd=clone_dir``).
-        binary: the output binary path (``paths.codex_dir / "moon-bridge"``).
+        runner: injected subprocess seam.
+        clone_dir: tempdir for clone; build runs with cwd=clone_dir.
+        binary: output binary path (paths.codex_dir / "moon-bridge").
     """
     # #16: git/go must not inherit ZAI_API_KEY — none of them need it.
     env = child_env()

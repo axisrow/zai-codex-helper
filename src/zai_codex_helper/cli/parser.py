@@ -38,27 +38,7 @@ from zai_codex_helper.services.provider_apply import (  # noqa: E402, F401
 
 
 def _handle_use_zai(args: argparse.Namespace) -> int:
-    """Make Z.ai (``glm-5.2``, ``xhigh``) the Codex default (D-45, PROV-01).
-
-    Phase 7 — the Core Value. This is the command the project exists to
-    deliver: ``zai-codex-helper use zai`` writes the canonical Z.ai desired
-    state to the real ``~/.codex/config.toml`` end-to-end. Replaces the Phase
-    1 ``_stub("use zai")`` wiring (D-03).
-
-    Follows the D-31 restore-handler shape verbatim: lazy imports inside the
-    body, resolve ``Paths.default()``, delegate to the shared
-    :func:`~zai_codex_helper.services.provider_apply.apply_provider` + render the
-    result once, return 0. Does NOT catch :class:`ZaiCodexHelperError` (D-11 —
-    owned by :func:`main`), does NOT call ``sys.exit``.
-
-    Args:
-        args: The parsed argparse namespace (unused beyond dispatch).
-
-    Returns:
-        0 on success (the pipeline raises on failure; success means the
-        config was written, post-conditions passed, and the restart warning
-        was emitted).
-    """
+    """Make Z.ai (``glm-5.2``, ``xhigh``) the Codex default (D-45, PROV-01)."""
     # Lazy imports (mirrors `_handle_restore`'s discipline so parser.py stays
     # import-light at module load).
     from zai_codex_helper.services.paths import Paths
@@ -75,27 +55,7 @@ def _handle_use_zai(args: argparse.Namespace) -> int:
 
 
 def _handle_use_openai(args: argparse.Namespace) -> int:
-    """Revert to the OpenAI default (``gpt-5.5``) — PROV-02, the inverse of :func:`_handle_use_zai`.
-
-    Phase 7 — the reversible half of the Core Value:
-    ``zai-codex-helper use openai`` writes ``model = "gpt-5.5"``, removes the
-    ``model_provider`` pointer (Codex falls back to its builtin OpenAI
-    provider), and PRESERVES the ``[model_providers.zai-moonbridge]`` block so
-    a later ``use zai`` does not need to recreate it. Replaces the Phase 1
-    ``_stub("use openai")`` wiring (D-03).
-
-    Follows the D-31 restore-handler shape verbatim: lazy imports, resolve
-    ``Paths.default()``, delegate to
-    :func:`~zai_codex_helper.services.provider_apply.apply_provider` + render the
-    result once, return 0. Does NOT catch :class:`ZaiCodexHelperError`, does NOT
-    call ``sys.exit``.
-
-    Args:
-        args: The parsed argparse namespace (unused beyond dispatch).
-
-    Returns:
-        0 on success.
-    """
+    """Revert to OpenAI (``gpt-5.5``) — PROV-02."""
     from zai_codex_helper.services.paths import Paths
     from zai_codex_helper.services.provider_apply import apply_provider
     from zai_codex_helper.services.providers import apply_openai
@@ -110,28 +70,7 @@ def _handle_use_openai(args: argparse.Namespace) -> int:
 
 
 def _handle_restore(args: argparse.Namespace) -> int:
-    """Roll the user's config back to the one-time ``.bak`` (D-31, SC-2).
-
-    This is the first REAL (non-stub) subcommand handler (Phase 4, D-31).
-    It is autonomous — no interactive prompt — and restores unconditionally
-    (the "are you sure" UX is a later phase).
-
-    The handler owns NO error formatting. Any
-    :class:`zai_codex_helper.__main__.ZaiCodexHelperError` (e.g.
-    ``"no backup to restore"``) is allowed to PROPAGATE to
-    :func:`zai_codex_helper.__main__.main`, which formats it per D-11
-    (one-line ``error: <msg>`` on stderr + exit 1, full traceback under
-    ``--debug``). It does NOT call ``sys.exit``, does NOT print to stderr,
-    and does NOT wrap the coordinator call in ``try/except``.
-
-    Delegates to :meth:`BackupCoordinator.restore` (Plan 04-01) — the
-    coordinator itself is NOT redefined here. Paths resolve via
-    :meth:`Paths.default()` (never hard-codes ``~/.codex``).
-
-    Passes the real :class:`TomlBackend` to the coordinator so it sees a
-    full :class:`ConfigBackend` (path + declared ``backup_mode``), not a
-    path-only stand-in.
-    """
+    """Roll config back to the one-time ``.bak`` (D-31, SC-2)."""
     # Lazy imports keep `parser.py` import-light and side-effect-free at
     # module load (avoids walking _backup -> __main__ -> parser on import).
     from zai_codex_helper.backends._backup import BackupCoordinator
@@ -148,45 +87,7 @@ def _handle_restore(args: argparse.Namespace) -> int:
 
 
 def _handle_status(args: argparse.Namespace) -> int:
-    """Print the current provider, config paths, and version — READ-ONLY (D-50..D-55, PROV-05).
-
-    Phase 8 — the observability companion to the Core Value. After ``use zai``
-    a user runs ``status`` to confirm Z.ai is active at a glance, without
-    hand-reading ``config.toml``. Prints three plain-text sections (D-50):
-
-    1. **Provider** — the active default provider (Z.ai vs OpenAI builtin) with
-       the flat top-level ``model`` and ``model_reasoning_effort`` values. For
-       a missing config: "OpenAI (builtin default), config.toml not yet
-       created" (D-52 — missing != broken).
-    2. **Config paths** — every ``Paths.default()``-resolved location
-       (``config_toml``, ``moonbridge_yml``, ``models_cache``, ``zshrc``,
-       ``launchagents_dir``) with an ``[exists]`` / ``[missing]`` marker from
-       the read-only ``Path.exists()``.
-    3. **Version** — ``zai-codex-helper <__version__>`` (D-16 single source).
-
-    READ-ONLY GUARANTEE (D-51 — load-bearing, T-08-01): the handler calls ONLY
-    ``TomlBackend.read()`` (when the config exists), ``Path.exists()`` for
-    path markers, and ``zai_codex_helper.__version__``. It does NOT call
-    ``write_canonical`` / ``backup_once`` / ``atomic_write`` / ``os.replace``
-    / ``os.chmod`` / ``unlink`` / ``mkdir`` / ``rename`` — enforced by the
-    static guard in ``tests/test_status.py`` and the byte-identical HOME
-    snapshot test across three seed states.
-
-    ERROR CONTRACT (D-52, T-08-02): the handler does NOT catch
-    :class:`ZaiCodexHelperError` and does NOT call ``sys.exit`` — it lets the
-    read-boundary translator's :class:`ZaiCodexHelperError` (raised on
-    malformed TOML) propagate to :func:`zai_codex_helper.__main__.main`, which
-    formats it per D-11 (one-line ``error: <msg>`` + exit 1, traceback under
-    ``--debug``). Missing config is NOT an error (exit 0, D-52).
-
-    Args:
-        args: The parsed argparse namespace (unused beyond dispatch).
-
-    Returns:
-        0 on a parseable config AND on a missing config. A broken config
-        raises before return (translated by the read boundary; ``main``
-        returns 1).
-    """
+    """Print provider, config paths, and version — READ-ONLY (D-50..D-55, PROV-05)."""
     # Lazy imports keep `parser.py` import-light at module load (mirrors the
     # `_handle_restore` / `_handle_use_zai` discipline).
     from zai_codex_helper import __version__
@@ -254,34 +155,7 @@ def _handle_status(args: argparse.Namespace) -> int:
 
 
 def _handle_install_service(args: argparse.Namespace) -> int:
-    """Install the Moon Bridge LaunchAgent (Phase 13, SERV-01/SERV-04, D-83/D-86).
-
-    Autonomous (no prompt). Writes the canonical plist
-    (KeepAlive/RunAtLoad/absolute binary path via Phase 9's
-    :class:`PlistBackend`), runs ``launchctl bootstrap gui/<UID> <plist>``, and
-    verifies the agent is actually loaded + listening (SERV-04 — bootstrap exit
-    0 alone is insufficient). Replaces the Phase 1 ``_stub("install-service")``
-    wiring (D-02).
-
-    Follows the D-31 restore / D-45 use-handler / D-76 setup-handler shape
-    verbatim: lazy imports inside the body, resolve ``Paths.default()``,
-    delegate to :func:`zai_codex_helper.services.lifecycle.install_service`,
-    return the int. Does NOT catch :class:`ZaiCodexHelperError` (D-11 — owned
-    by :func:`zai_codex_helper.__main__.main`), does NOT call ``sys.exit``.
-
-    The ``runner`` param is NOT forwarded — it defaults to
-    :func:`subprocess.run` inside ``install_service`` (the seam is for unit
-    tests only; threat T-13-07). A non-zero exit / :class:`ZaiCodexHelperError`
-    (platform gate on non-darwin, real bootstrap failure, verify-not-loaded)
-    propagates to :func:`main` per D-11.
-
-    Args:
-        args: The parsed argparse namespace (unused beyond dispatch).
-
-    Returns:
-        0 on success (the agent is registered AND verified loaded; a loaded-
-        but-not-listening state is a WARNING, still exit 0 — SERV-04).
-    """
+    """Install the Moon Bridge LaunchAgent (SERV-01/SERV-04, D-83/D-86)."""
     from zai_codex_helper.services.lifecycle import install_service
     from zai_codex_helper.services.paths import Paths
 
@@ -297,29 +171,7 @@ def _handle_install_service(args: argparse.Namespace) -> int:
 
 
 def _handle_uninstall_service(args: argparse.Namespace) -> int:
-    """Uninstall the Moon Bridge LaunchAgent (Phase 13, SERV-02/SERV-03, D-84/D-85).
-
-    Autonomous (no prompt). Runs ``launchctl bootout gui/<UID>/<LABEL>`` (the
-    SAME shared Label install bootstrapped — D-85, never an orphan) and removes
-    the plist. Idempotent: running uninstall twice (or after a manual
-    ``bootout``) exits 0 because both the already-booted-out condition (EIO rc
-    36 / "Could not find service") and the missing-plist condition are
-    swallowed. A REAL failure (e.g. "Operation not permitted") raises. Replaces
-    the Phase 1 ``_stub("uninstall-service")`` wiring (D-02).
-
-    Follows the D-31 / D-45 / D-76 handler shape verbatim: lazy imports,
-    ``Paths.default()``, delegate to
-    :func:`zai_codex_helper.services.lifecycle.uninstall_service`, return the
-    int. Does NOT catch :class:`ZaiCodexHelperError` (D-11), does NOT call
-    ``sys.exit``. The ``runner`` param is NOT forwarded (the seam is for unit
-    tests only; threat T-13-07).
-
-    Args:
-        args: The parsed argparse namespace (unused beyond dispatch).
-
-    Returns:
-        0 on success (the agent is de-registered AND the plist removed).
-    """
+    """Uninstall the Moon Bridge LaunchAgent (SERV-02/SERV-03, D-84/D-85)."""
     from zai_codex_helper.services.lifecycle import uninstall_service
     from zai_codex_helper.services.paths import Paths
 
@@ -331,34 +183,7 @@ def _handle_uninstall_service(args: argparse.Namespace) -> int:
 
 
 def _handle_setup(args: argparse.Namespace) -> int:
-    """Run the guided end-to-end onboarding (D-76..D-82, SETUP-01/02/03).
-
-    Phase 12 — the capstone. This is the command a new user runs ONCE to wire
-    up the whole Codex ⇄ Moon Bridge ⇄ Z.ai link: it walks provider choice →
-    API key → ``moonbridge-zai.yml``@0600 → Moon Bridge build → shell helpers
-    opt-in → apply the chosen provider → LaunchAgent OFFER → summary. The same
-    flow runs headless via ``--yes`` / ``--no-input`` (D-79). Replaces the
-    Phase 1 ``_stub("setup")`` wiring (D-02).
-
-    Follows the D-31 restore / D-45 use-handler shape verbatim: lazy imports
-    inside the body, resolve ``Paths.default()``, delegate, return the int the
-    orchestrator returns (0 on success). Does NOT catch
-    :class:`ZaiCodexHelperError` (D-11 — owned by :func:`main`), does NOT call
-    ``sys.exit``.
-
-    D-79 mapping: ``getattr(args, 'yes', False) or getattr(args, 'no_input', False)`` both force headless mode
-    (every ``confirm()`` returns True; provider defaults to zai; ZAI_API_KEY
-    env becomes REQUIRED). The ``--no-input`` flag is added in
-    :func:`build_parser` alongside ``--yes``.
-
-    Args:
-        args: The parsed argparse namespace. Reads ``args.yes``,
-            ``args.no_input``, and ``getattr(args, 'dry_run', False)``.
-
-    Returns:
-        0 on success (the orchestrator raises on failure; success means the
-        full onboarding flow completed and the chosen provider is applied).
-    """
+    """Run guided end-to-end onboarding (D-76..D-82, SETUP-01/02/03)."""
     # Lazy imports keep `parser.py` import-light at module load (mirrors the
     # `_handle_restore` / `_handle_use_zai` discipline). The orchestrator owns
     # ALL step logic; the handler is a thin arg-forwarding shell (D-81).
@@ -374,13 +199,7 @@ def _handle_setup(args: argparse.Namespace) -> int:
 
 
 def _handle_install(args: argparse.Namespace) -> int:
-    """Macro: turn Z.ai ON end-to-end — one command for the Core Value.
-
-    Delegates to :func:`install_macro` (single source of truth, shared with the
-    TUI). After this, a bare ``codex`` (no flags/env/profile — what BOTH Codex
-    CLI and Desktop read) starts on Z.ai. Does NOT catch
-    :class:`ZaiCodexHelperError` (D-11 — owned by :func:`main`).
-    """
+    """Macro: turn Z.ai ON end-to-end."""
     from zai_codex_helper.services.install import install_macro
     from zai_codex_helper.services.paths import Paths
 
@@ -395,12 +214,7 @@ def _handle_install(args: argparse.Namespace) -> int:
 
 
 def _handle_uninstall(args: argparse.Namespace) -> int:
-    """Macro: turn Z.ai OFF — revert Codex to the OpenAI default, fully.
-
-    Delegates to :func:`uninstall_macro` (shared with the TUI). After this, a
-    bare ``codex`` starts on OpenAI, and the Moon Bridge service is gone. Does
-    NOT catch :class:`ZaiCodexHelperError` (D-11).
-    """
+    """Macro: turn Z.ai OFF end-to-end."""
     from zai_codex_helper.services.install import uninstall_macro
     from zai_codex_helper.services.paths import Paths
 
@@ -413,35 +227,7 @@ def _handle_uninstall(args: argparse.Namespace) -> int:
 
 
 def _handle_doctor(args: argparse.Namespace) -> int:
-    """Diagnose the Codex ⇄ Moon Bridge ⇄ Z.ai chain (Phase 14, DIAG-01..04, D-89..D-94).
-
-    The SEVENTH real (non-stub) subcommand — the LAST Phase 1 stub to become
-    real. ``zai-codex-helper doctor`` walks the chain link-by-link and prints a
-    colored verdict (``[OK]``/``[!]``/``[X]``) plus a ``To fix:`` hint for
-    every non-pass check, exiting ``0`` unless at least one check FAILS.
-    READ-ONLY (D-94): no writes, no launchctl bootstrap, no build.
-
-    Follows the D-31 restore / D-45 use-handler / D-83 install-handler shape
-    verbatim: lazy imports inside the body, resolve ``Paths.default()``,
-    delegate to :func:`zai_codex_helper.services.doctor.run_doctor`, return
-    the int exit code run_doctor returns. doctor owns its own colored output
-    and its exit code (it does NOT raise :class:`ZaiCodexHelperError`
-    per-check — it catches, marks the CheckResult, continues, and computes the
-    exit code at the end), so the handler is catch-free like
-    :func:`_handle_install_service`.
-
-    The ``runner`` / ``http_client`` / ``environ`` params are NOT forwarded —
-    they default to :func:`subprocess.run`, an internally-constructed
-    hard-timeout :class:`httpx.Client`, and ``os.environ`` inside run_doctor
-    (the seams are for unit tests only; mirrors the T-13-07 discipline).
-
-    Args:
-        args: The parsed argparse namespace (unused beyond dispatch).
-
-    Returns:
-        ``0`` if no check failed; ``1`` if any check failed. WARNs do NOT
-        fail doctor.
-    """
+    """Diagnose the Codex ⇄ Moon Bridge ⇄ Z.ai chain (DIAG-01..04, D-89..D-94)."""
     from zai_codex_helper.services.doctor import run_doctor, run_with_spinner
     from zai_codex_helper.services.paths import Paths
 
@@ -468,30 +254,14 @@ def _handle_doctor(args: argparse.Namespace) -> int:
 
 
 def _handle_tui(args: argparse.Namespace) -> int:
-    """Open the interactive arrow-key menu — the bare ``zai-codex-helper`` default.
-
-    This is the root parser's default ``func`` (no subcommand), so a bare
-    ``zai-codex-helper`` invocation lands here. A thin shell like every other
-    handler: it delegates to :func:`zai_codex_helper.cli.tui.run`, which owns
-    its own event loop and catches :class:`ZaiCodexHelperError` per-action (so
-    a failed Install / Uninstall / Doctor returns to the menu instead of
-    exiting). The ``--dry-run`` flag is forwarded so ``Install`` previews
-    instead of writing (mirrors the ``install-service --dry-run`` path).
-    """
+    """Open the interactive arrow-key menu (bare ``zai-codex-helper`` default)."""
     from zai_codex_helper.cli import tui
 
     return tui.run(args)
 
 
 def _handle_set_key(args: argparse.Namespace) -> int:
-    """Replace the Z.ai API key in ``moonbridge-zai.yml`` (``set-key``).
-
-    A thin shell like every other handler: resolve ``Paths.default()``,
-    delegate to :func:`zai_codex_helper.services.api_key.set_key`, return the
-    int. Forwards ``--dry-run`` so the change previews as a redacted diff and
-    writes nothing. Does NOT catch :class:`ZaiCodexHelperError` (D-11 — owned
-    by :func:`main`), does NOT call ``sys.exit``.
-    """
+    """Replace the Z.ai API key in ``moonbridge-zai.yml``."""
     from zai_codex_helper.services.api_key import set_key
     from zai_codex_helper.services.paths import Paths
 

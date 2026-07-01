@@ -1,68 +1,34 @@
-"""Phase 14 — the ``doctor`` diagnostic pipeline (D-89..D-94; DIAG-01..04).
+"""READ-ONLY diagnostic pipeline (D-89..D-94; DIAG-01..04).
 
-``zai-codex-helper doctor`` is the READ-ONLY observability/troubleshooting
-companion to ``setup`` / ``install-service``: when Z.ai is not working, doctor
-walks the entire Codex ⇄ Moon Bridge ⇄ Z.ai chain **link by link** and prints a
-colored verdict (``[✓]`` / ``[!]`` / ``[✗]``) plus an indented ``To fix:``
-hint for every non-pass check. It exits ``0`` unless at least one check FAILS
-(``✗``); WARN (``!``) alone yields exit ``0``.
+Walks the Codex ⇄ Moon Bridge ⇄ Z.ai chain link-by-link, printing colored
+verdicts (``[OK]`` / ``[!]`` / ``[X]``) + ``To fix:`` hints. Exits ``0`` unless
+a check FAILS; WARNs alone → exit ``0`` (D-89).
 
-The ordered 7-check chain (DIAG-01, D-89) — the slow POST probe runs LAST so
-the fast checks render before the user waits on Z.ai:
+The ordered check chain (DIAG-01, D-89):
+  1. Moon Bridge binary — :func:`detect_moonbridge_binary`.
+  2. ``moonbridge-zai.yml`` parseable — :class:`YamlBackend.read`.
+  3. Port ``127.0.0.1:38440`` open — socket probe.
+  4. ``GET /v1/models`` — httpx GET (hard timeout D-90, DIAG-02).
+  5. Current default provider — :func:`detect_provider`.
+  6. LaunchAgent loaded — :func:`verify_service_loaded`.
+  7. Key mode ``0600`` — file permission check.
+  8. ``POST /v1/responses`` (``glm-5.2``) — slow upstream probe LAST (spinner,
+     interruptible → WARN not FAIL).
 
-  1. Moon Bridge binary   — reuse Phase 10 :func:`detect_moonbridge_binary`.
-  2. ``moonbridge-zai.yml`` parseable — Phase 9 :class:`YamlBackend.read`.
-  3. Port ``127.0.0.1:38440`` open — stdlib ``socket.create_connection`` probe
-     (mirrors the Phase 13 post-install verify port half).
-  4. ``GET /v1/models`` — httpx GET through a SINGLE hard-timeout client.
-  5. current default — Phase 8 :func:`detect_provider` (``is_zai``?).
-  6. LaunchAgent loaded — Phase 13 :func:`verify_service_loaded` (launchctl
-     half only; the port half is already covered by check 3).
-  7. key ``0600`` — ``stat.S_IMODE(os.stat(paths.moonbridge_yml).st_mode)``.
-  8. ``POST /v1/responses`` (``glm-5.2``) — httpx POST, LAST: the slow upstream
-     round-trip (3–20s) runs after every fast check, behind a spinner that the
-     user can interrupt (Esc in TUI / Ctrl-C in CLI) → WARN, not FAIL.
+Codex Desktop detection (D-91, DIAG-03): ``pgrep`` check on darwin only → WARN
+if running (staleness hint). Models_cache check is READ-ONLY (Phase 15 writes).
 
-(`models_cache.json` is NOT checked: it is Codex's OpenAI-model catalog, which
-the app-server overwrites on fetch — glm-5.2 never lands there by design. The
-``GET /v1/models`` probe on Moon Bridge is the real availability proof.)
+HTTP hard timeout (D-90, DIAG-02): both probes share one :class:`httpx.Client`
+with split timeouts (short connect, longer read) — bounds T-14-01/T-14-02.
+Port open ≠ auth correct; each check is a distinct :class:`CheckResult`.
 
-Plus the Codex Desktop detection (D-91, DIAG-03): a separate ``pgrep -x Codex``
-check invoked ONLY on darwin. When Codex Desktop is running it emits a WARN
-(never a fail) — a staleness hint, not a broken-state.
+READ-ONLY CONTRACT (D-94, threat T-14-03): zero writes, no bootstrap/bootout,
+no build, no models_cache write. Only subprocess: ``pgrep`` + ``launchctl print``
+via ``runner`` seam (all mockable). Unit test asserts tmp HOME unchanged.
 
-HTTP hard timeout (D-90, DIAG-02 — load-bearing): both HTTP probes share ONE
-:class:`httpx.Client` constructed with a hard ``timeout=`` (connect + read).
-``port open`` (check 3 passes) does NOT mean ``auth correct`` (checks 4/5 may
-fail) — each probe is a DISTINCT :class:`CheckResult`, so a port-open-but-auth-
-wrong state is diagnosed precisely (``port ✓``, ``/v1/models ✗``). The hard
-timeout also bounds exposure to a hung/malicious local listener (threat
-T-14-01/T-14-02).
-
-READ-ONLY CONTRACT (D-94, threat T-14-03 — absolute): doctor performs NO
-writes (no ``atomic_write`` / ``os.replace`` / ``os.chmod`` / ``unlink``), NO
-``launchctl bootstrap`` / ``bootout`` (it only READS agent state via
-``launchctl print`` through :func:`verify_service_loaded`), NO ``go build``,
-and does NOT write the ``models_cache.json`` ``glm-5.2`` entry (Phase 15 —
-doctor only READS it). The ONLY subprocess calls are ``pgrep`` (D-91) and
-whatever :func:`verify_service_loaded` issues via the ``runner`` seam — all
-mockable. A unit test asserts the tmp HOME file set is byte-identical
-before/after a full run.
-
-Colored output (D-92, CLAUDE.md D-04/D-05 — manual ANSI, NO Rich): the markers
-``[✓]`` (pass), ``[!]`` (warn), ``[✗]`` (fail) are wrapped in ANSI escape
-codes when color is enabled and emitted as plain ASCII otherwise. Color auto-
-disables when stdout is not a TTY (``sys.stdout.isatty()``); a caller may pass
-an explicit ``color`` override. Every non-pass renders an indented second line
-``    To fix: <fix_hint>``.
-
-TESTABILITY (D-89): the three seams are ``runner`` (default
-:func:`subprocess.run` — for ``pgrep`` + ``launchctl print``),
-``http_client`` (default ``None`` → doctor constructs a single hard-timeout
-:class:`httpx.Client`; tests inject their own client pointing at a
-pytest-httpserver endpoint), and ``environ`` (default ``os.environ``). Unit
-tests inject a recording fake runner + a pytest-httpserver-backed httpx client
-so NO real ``launchctl`` / ``pgrep`` / network ever runs (threat T-14-02).
+Colored output (D-92): ANSI markers when TTY, plain ASCII when piped. Three
+seams for testing: ``runner`` (subprocess), ``http_client`` (httpx), ``environ``
+(env vars) — all injectable.
 """
 
 from __future__ import annotations

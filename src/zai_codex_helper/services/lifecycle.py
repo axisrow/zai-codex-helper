@@ -1,63 +1,31 @@
-"""Phase 13 — LaunchAgent lifecycle orchestration (D-83..D-88; SERV-01..04).
+"""LaunchAgent lifecycle orchestration (D-83..D-88; SERV-01..04).
 
-This is the launchctl-orchestration layer for the Moon Bridge LaunchAgent.
-It owns ONLY the three ``launchctl`` invocations (``bootstrap`` / ``bootout`` /
-``print``), the post-install port probe, the macOS platform gate, and the
-shared ``Label`` re-export. The plist EMISSION stays in
-:class:`~zai_codex_helper.backends.plist.PlistBackend` (Phase 9 — KeepAlive /
-RunAtLoad / absolute binary path, no ``~``); this module consumes
-:meth:`PlistBackend.write_canonical` and never re-derives the plist shape.
+Owns the three ``launchctl`` invocations (``bootstrap`` / ``bootout`` / ``print``),
+the post-install port probe, macOS platform gate, and shared ``Label`` re-export.
+The plist emission stays in :class:`~zai_codex_helper.backends.plist.PlistBackend`
+(D-87: separate module so non-darwin machines can import plist backend without
+platform-gated launchctl code).
 
-Why a separate module (D-87):
-  - ``backends/plist.py`` is the plist primitive (file emission, atomic write);
-  - ``services/lifecycle.py`` is the macOS launchctl primitive (subprocess +
-    verify). Keeping them separate means a non-darwin machine can still import
-    the plist backend (e.g. for read-only checks) without pulling in the
-    platform-gated launchctl code path.
+Modern API: ``launchctl bootstrap gui/<UID> <plist>`` (register),
+``launchctl bootout gui/<UID>/<LABEL>`` (de-register),
+``launchctl print gui/<UID>/<LABEL>`` (inspect). Never uses deprecated ``load``/``unload``.
 
-Modern API discipline (CLAUDE.md "What NOT to Use"):
-  - ``launchctl bootstrap gui/<UID> <plist>`` — register the agent.
-  - ``launchctl bootout gui/<UID>/<LABEL>`` — de-register the agent.
-  - ``launchctl print gui/<UID>/<LABEL>`` — inspect whether it is loaded.
-  The DEPRECATED ``launchctl`` legacy subcommands (``load`` / ``unload``) are
-  NEVER used. A static grep gate in the plan's verification forbids them.
+Shared Label (D-85, SERV-03): :data:`LAUNCHAGENT_LABEL` imported from
+:data:`backends.plist.LABEL` — identity (not equality) ensures no orphan agents.
 
-Shared Label (D-85, SERV-03 — load-bearing):
-  :data:`LAUNCHAGENT_LABEL` is IMPORTED from
-  :data:`backends.plist.LABEL`, NOT re-stringed. ``uninstall_service`` therefore
-  ``bootout``s the EXACT registration ``install_service`` ``bootstrap``ped — it
-  can never orphan a differently-named agent. A unit test asserts
-  ``LAUNCHAGENT_LABEL IS backends.plist.LABEL`` (identity, not just equality).
+Idempotence (D-84, SERV-02): ``uninstall_service`` swallows known already-booted-out
+conditions (rc 36, "Could not find service", "no such process"), same for
+``install_service`` + "already bootstrapped"; removes missing plist via ``missing_ok=True``.
 
-Idempotence (D-84, SERV-02):
-  - ``uninstall_service`` swallows the KNOWN already-booted-out conditions
-    (EIO rc 36 / "Could not find service" / "Input/output error") — the goal
-    (agent not registered) is already achieved. A REAL failure
-    ("Operation not permitted") still raises.
-  - ``install_service`` swallows the known already-loaded bootstrap response
-    ("already bootstrapped") — same rationale.
-  - Removing a missing plist is fine (``unlink(missing_ok=True)``).
+Post-install verify (D-86, SERV-04): ``bootstrap`` exit 0 alone is insufficient.
+:func:`verify_service_loaded` runs ``launchctl print`` + TCP probe (127.0.0.1:38440).
+Not-loaded → raise; loaded-but-port-closed → warn, exit 0.
 
-Post-install verify (D-86, SERV-04 — load-bearing):
-  ``bootstrap`` exit 0 alone does NOT prove the agent is running. After
-  bootstrap, :func:`verify_service_loaded` runs ``launchctl print`` (is it
-  loaded?) AND a short-timeout TCP probe of 127.0.0.1:38440 (is Moon Bridge
-  listening?). Not-loaded → raise; loaded-but-not-listening → WARNING (Moon
-  Bridge may need a moment to boot), exit 0.
+Scope (D-88): Does NOT build Moon Bridge, run ``setup``, or run the full ``doctor`` pipeline.
+ONLY three ``launchctl`` invocations via the ``runner`` seam.
 
-Scope discipline (D-88):
-  This module does NOT build Moon Bridge (Phase 11), does NOT run ``setup``
-  (Phase 12), does NOT run the full ``doctor`` pipeline (Phase 14 — the port
-  probe here is a SINGLE post-install check), and does NOT auto-install
-  anything. The ONLY subprocess calls are the three ``launchctl`` invocations
-  and they ALL go through the ``runner`` seam.
-
-TESTABILITY (D-83):
-  The ONLY subprocess seam is the ``runner`` parameter (default
-  :func:`subprocess.run`); unit tests inject a recording fake so NO real
-  ``launchctl`` runs. The port probe uses the stdlib :mod:`socket` module
-  attribute (``socket.create_connection``), which tests monkeypatch on the
-  module — NO real network in unit tests.
+Testability (D-83): ``runner`` parameter injection for launchctl; ``socket.create_connection``
+monkeypatch for port probe — NO real subprocess or network in unit tests.
 """
 
 from __future__ import annotations
@@ -244,67 +212,29 @@ def install_service(
 ) -> int:
     """Install the Moon Bridge LaunchAgent (D-83; SERV-01).
 
-    The matched-install half of the lifecycle pair. Writes the canonical plist
-    via :meth:`PlistBackend.write_canonical` (Phase 9 reuse — KeepAlive /
-    RunAtLoad / absolute binary path, mode 0o644), then runs the modern
-    ``launchctl bootstrap gui/<UID> <plist>`` to register the agent, then
-    verifies it is actually loaded + listening (D-86).
-
-    Sequence (D-83 steps 1-4):
-
-      1. Platform gate (:func:`_gate_darwin`).
-      2. ``PlistBackend(paths).write_canonical(canonical_plist(paths))`` —
-         writes the FULL canonical plist wholesale (do NOT re-derive).
-      3. ``launchctl bootout gui/<UID>/<LABEL>`` FIRST (idempotent — a
-         not-registered label yields an already-booted-out stderr we swallow),
-         THEN ``launchctl bootstrap gui/<UID> <plist_path>`` — both via
-         ``runner`` with ``check=False``. The pre-bootout forces launchd to
-         reload the freshly-written plist's ProgramArguments; without it an
-         in-place upgrade (e.g. a moved binary path) would keep the stale job
-         running while bootstrap reports "already loaded" success. bootstrap
-         rc 0 → proceed; rc != 0 + an :data:`_ALREADY_LOADED_PATTERNS` entry →
-         idempotent success, proceed. Otherwise raise
-         :class:`ZaiCodexHelperError`.
-      4. :func:`verify_service_loaded` (D-86). Not-loaded → raise (SERV-04:
-         bootstrap exit 0 alone is insufficient). Loaded + port-closed →
-         WARNING to stderr, exit 0.
-
-    Phase 15 dry-run branch (CONF-07, D-95 NOTE): when ``dry_run`` is True,
-    step 1 (platform gate) STILL runs (a non-darwin dry-run is still an
-    error — the command is meaningless off-platform), but steps 2-4 are
-    replaced by a SUMMARY printed to stdout: "would write plist to <path>",
-    "would run: launchctl bootstrap gui/<UID> <plist>", "would verify via
-    launchctl print + port probe". The plist is NOT written and ``runner`` is
-    NEVER called (no launchctl). D-95 NOTE explicitly allows install-service
-    summary depth (a full plist XML diff is not required; the summary conveys
-    the would-do intent).
+    Writes canonical plist, runs ``launchctl bootout`` (pre-bootstrap idempotent
+    re-register), then ``launchctl bootstrap`` to register agent, then verifies
+    loaded + listening (D-86). Idempotent on already-loaded (D-84). With ``force``
+    skips convergence check; with ``dry_run`` prints summary instead of modifying.
 
     Args:
-        paths: The injected :class:`Paths` bundle (D-22). The plist lands at
-            ``paths.launchagents_dir / "dev.zai.moonbridge.plist"`` — never a
-            hard-coded ``~`` literal.
-        runner: The ONLY subprocess seam (D-83). Defaults to
-            :func:`subprocess.run`; unit tests inject a recording fake so NO
-            real ``launchctl`` runs. Production handlers in ``cli/parser.py``
-            do NOT forward a runner (threat T-13-07). NEVER called under
-            ``dry_run``.
-        dry_run: Phase 15 (D-95). When True, print a "would write plist +
-            bootstrap + verify" summary and return 0 WITHOUT writing the plist
-            or calling ``runner``/launchctl.
-        force: Q2 (#10). When True, skip the convergence check and ALWAYS
-            bootout→write→bootstrap (the pre-#10 behavior). Default False: a
-            repeat install on an already-loaded, non-drifted agent is a no-op
-            that leaves the running service untouched.
+        paths: The injected :class:`Paths` bundle (D-22). Plist at
+            ``paths.launchagents_dir / "dev.zai.moonbridge.plist"``.
+        runner: The ONLY subprocess seam (D-83). Defaults to :func:`subprocess.run`;
+            unit tests inject a recording fake (T-13-07: production handlers do not forward runner).
+            NEVER called under ``dry_run``.
+        dry_run: When True, print "would write plist + bootstrap + verify" summary
+            and return 0 WITHOUT writing or calling launchctl (D-95).
+        force: When True, skip convergence check and ALWAYS bootout→write→bootstrap
+            (Q2, #10). Default False: repeat install on loaded + non-drifted agent
+            is a no-op.
 
     Returns:
-        0 on success (the agent is registered AND verified loaded), or 0 after
-        printing the dry-run summary when ``dry_run`` is True, or 0 after the
-        convergence no-op when the agent is already loaded + non-drifted.
+        0 on success (agent registered + verified loaded), or 0 after dry-run
+        summary or convergence no-op.
 
     Raises:
-        ZaiCodexHelperError: on non-darwin (platform gate — raised even under
-            ``dry_run``), a real bootstrap failure (rc != 0 + non-already-loaded
-            stderr), or verify-not-loaded.
+        ZaiCodexHelperError: on non-darwin, real bootstrap failure, or verify-not-loaded.
     """
     # 1. Platform gate (D-83 step 1, D-88). Runs even under dry_run: the
     #    service commands are macOS-only, so a non-darwin dry-run is still an
@@ -412,40 +342,22 @@ def uninstall_service(
 ) -> int:
     """Uninstall the Moon Bridge LaunchAgent (D-84; SERV-02).
 
-    The matched-uninstall half of the lifecycle pair. Runs the modern
-    ``launchctl bootout gui/<UID>/<LABEL>`` to de-register the agent, then
-    removes the plist. Idempotent on both the already-booted-out condition and
-    the missing-plist condition.
-
-    Sequence (D-84 steps 1-4):
-
-      1. Platform gate (:func:`_gate_darwin`).
-      2. ``launchctl bootout gui/<UID>/<LABEL>`` via ``runner`` with
-         ``check=False`` (in-band inspection so the idempotent already-booted-
-         out path is handled).
-      3. If rc != 0: lowercase the stderr; if it matches an
-         :data:`_ALREADY_BOOTED_OUT_PATTERNS` entry → swallow (the agent is
-         already not registered — goal achieved). Otherwise raise
-         :class:`ZaiCodexHelperError` (a REAL failure like "Operation not
-         permitted" still raises).
-      4. Remove the plist idempotently (``missing_ok=True``).
+    Runs ``launchctl bootout gui/<UID>/<LABEL>`` to de-register agent, then
+    removes the plist. Idempotent on already-booted-out and missing-plist (D-84).
 
     Args:
         paths: The injected :class:`Paths` bundle (D-22).
-        runner: The ONLY subprocess seam (D-84). Defaults to
-            :func:`subprocess.run`; unit tests inject a recording fake.
-            NEVER called under ``dry_run``.
-        dry_run: When True, print a "would bootout + remove plist" summary
-            and return 0 WITHOUT calling ``runner``/launchctl or unlinking
-            the plist (symmetric with ``install_service``).
+        runner: The ONLY subprocess seam (D-84). Defaults to :func:`subprocess.run`;
+            unit tests inject a recording fake. NEVER called under ``dry_run``.
+        dry_run: When True, print "would bootout + remove plist" summary and return 0
+            WITHOUT calling launchctl or unlinking plist.
 
     Returns:
-        0 on success (the agent is de-registered AND the plist removed), or 0
-        after printing the dry-run summary when ``dry_run`` is True.
+        0 on success (agent de-registered + plist removed), or 0 after dry-run summary.
 
     Raises:
-        ZaiCodexHelperError: on non-darwin (platform gate), or a REAL bootout
-            failure (rc != 0 + non-already-booted-out stderr).
+        ZaiCodexHelperError: on non-darwin or REAL bootout failure (rc != 0 +
+            non-already-booted-out stderr).
     """
     # 1. Platform gate (D-84 step 1, D-88). Runs even under dry_run: the
     #    service commands are macOS-only, so a non-darwin dry-run is still an
@@ -496,29 +408,16 @@ def verify_service_loaded(
 ) -> tuple[bool, bool]:
     """Verify the LaunchAgent is loaded + Moon Bridge is listening (D-86; SERV-04).
 
-    Post-install verification: ``launchctl bootstrap`` exit 0 alone does NOT
-    prove the agent is actually running (SERV-04). This function runs the two
-    checks ``install_service`` composes into its warn-vs-fail decision:
-
-      1. ``launchctl print gui/<UID>/<LABEL>`` via ``runner`` — loaded iff
-         rc == 0 AND the combined stdout+stderr does NOT contain "could not
-         find service" (the canonical launchctl not-loaded marker).
-      2. TCP probe of ``127.0.0.1:38440`` with a short timeout — port_responding
-         iff :func:`socket.create_connection` returns a socket; any
-         :class:`OSError` → ``False``. The socket is closed immediately.
-
-    The CALLER decides the severity: ``launchctl_loaded=False`` → raise (the
-    agent did not register); ``launchctl_loaded=True`` +
-    ``port_responding=False`` → warn (Moon Bridge may need a moment to boot).
+    Runs ``launchctl print`` + TCP probe (127.0.0.1:38440). Caller decides severity:
+    not-loaded → raise; loaded-but-port-closed → warn (D-86).
 
     Args:
-        paths: The injected :class:`Paths` bundle (unused beyond the API shape —
-            the launchctl target is the shared Label + UID, both module-level).
+        paths: The injected :class:`Paths` bundle (unused; target is shared Label + UID).
         runner: The ONLY subprocess seam for the ``launchctl print`` call.
 
     Returns:
-        A ``(launchctl_loaded, port_responding)`` tuple. Each element is a
-        plain bool so the caller's warn-vs-fail logic is a simple branch.
+        A ``(launchctl_loaded, port_responding)`` tuple of plain bools for caller's
+        warn-vs-fail logic.
     """
     # 1. launchctl print gui/<UID>/<LABEL>. The Label is the imported shared
     #    constant (D-85) so print inspects the EXACT registration install

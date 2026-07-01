@@ -1,60 +1,22 @@
-"""Phase 12 — the ``setup`` onboarding orchestrator (the capstone).
+"""The ``setup`` onboarding orchestrator composing primitives from prior phases.
 
-This module is the single end-to-end entry point a new user runs
-(``zai-codex-helper setup``) to compose EVERY prior phase (2-11) into one guided
-flow. It adds NO new domain logic — it only orchestrates already-proven
-primitives:
+Orchestrates Paths → backup → moonbridge-zai.yml → Moon Bridge build → shell
+helpers → provider apply → LaunchAgent offer into a single ``zai-codex-helper
+setup`` flow. Adds NO domain logic; only composes already-proven primitives.
 
-- Phase 2 :class:`~zai_codex_helper.services.paths.Paths` (resolved paths).
-- Phase 4 :meth:`~zai_codex_helper.backends.base.ConfigBackend.backup_once`
-  (the sentinel-gated one-shot ``.bak``).
-- Phase 5/6/7 the provider write via the shared services primitive
-  :func:`~zai_codex_helper.services.provider_apply.apply_provider` (STEP 6) —
-  the ONE pipeline the ``use`` handlers and ``install`` also call (no cli import).
-- Phase 9 :class:`~zai_codex_helper.backends.yaml.YamlBackend` (the secrets file
-  at ``0600``) and :class:`~zai_codex_helper.backends.shell.ShellBackend` (the
-  ``.zshrc`` marker fence).
-- Phase 11 :func:`~zai_codex_helper.services.moonbridge.build_moonbridge`
-  (idempotent build-from-source).
+DECISIONS HONORED (D-76..D-82):
 
-DECISIONS HONORED (D-76..D-82 — every one load-bearing):
-
-- **D-76 (step order):** provider choice → API key → write ``moonbridge-zai.yml``
-  at ``0600`` → build Moon Bridge → shell helpers opt-in → apply the chosen
-  provider → LaunchAgent OFFER → summary. Every prompt routes through the
-  injected ``confirm_fn`` / ``input_fn`` / ``getpass_fn`` so ``--yes`` /
-  ``--no-input`` reuse ONE path; ``--dry-run`` previews via ``print_fn`` and
-  skips every mutating call.
-- **D-77 (SECR-01/03, security-critical):** API key precedence is
-  ``ZAI_API_KEY`` env → interactive ``getpass.getpass()`` (NEVER echoed). The
-  key flows ONLY into :meth:`YamlBackend.write_canonical` at ``0600``. It is
-  NEVER passed to ``print_fn``, NEVER returned in a log, NEVER placed in a
-  summary line. The SECR-03 canary test spies on ``capsys`` to prove the key
-  literal is absent from both stdout and stderr across a full run.
-- **D-78 (LaunchAgent OFFER ONLY):** the LaunchAgent step is a ``confirm_fn``
-  prompt; on consent it PRINTS ``Run: zai-codex-helper install-service`` and
-  nothing more. Phase 13 owns ``launchctl bootstrap`` / the plist write. This
-  orchestrator NEVER references ``launchctl`` / ``plistlib`` / the
-  ``launchagents_dir`` for mutation (D-82).
-- **D-79 (--yes / --no-input):** both map to ``yes=True`` in the handler; when
-  ``yes`` is True every prompt is bypassed — provider defaults to ``"zai"``,
-  shell helpers and the LaunchAgent are treated as consented, and the API key
-  is REQUIRED from ``ZAI_API_KEY`` env (no stdin is available; raising here is
-  the correct, actionable failure).
-- **D-80 (idempotence by composition):** a second run with the same inputs
-  produces byte-identical files because every primitive this calls is already
-  idempotent — ``backup_once`` sentinel, ``YamlBackend`` / ``ShellBackend``
-  replace-not-append upsert, ``build_moonbridge`` idempotent skip, and the
-  provider pipeline's upsert. The double-setup test pins it end-to-end.
-- **D-81 (location + injectability):`` ``run_setup`` lives in ``services/`` and
-  takes injected ``input_fn`` / ``getpass_fn`` / ``confirm_fn`` / ``build_fn``
-  / ``environ`` / ``print_fn`` so tests run ZERO real IO (no stdin, no real
-  subprocess, no real env). ``getpass`` comes from stdlib.
-- **D-82 (scope discipline):** NO launchctl / plist (Phase 13); NO ``doctor``
-  (Phase 14); NO auto-install of Go / brew (``build_moonbridge`` surfaces the
-  brew one-liner as MESSAGE TEXT only); NEVER echo / log the API key (SECR-03).
-  (Phase 15 adds the ``models_cache`` glm-5.2 entry as STEP 6.5 — D-98 / SC-4;
-  it is wired INTO setup, NOT a new CLI command per D-100.)
+- **D-76:** ordered STEP sequence (provider → key → yml → build → shell →
+  apply → offer → summary); all prompts routed through injected functions.
+- **D-77 (SECR-01/03):** API key ``ZAI_API_KEY`` env or getpass (NEVER echoed);
+  flows ONLY to YamlBackend.write_canonical at 0600; NEVER to print_fn/logs.
+- **D-78:** LaunchAgent is confirm-only (prints install-service hint, no plist).
+- **D-79:** ``--yes`` → headless (provider defaults to zai; all prompts bypassed;
+  key REQUIRED from env).
+- **D-80:** idempotence via composition (every called primitive is idempotent).
+- **D-81:** lives in services/; all IO seams injected (input_fn, getpass_fn,
+  confirm_fn, build_fn, environ, print_fn).
+- **D-82:** NO launchctl/plist/doctor auto-install; NEVER echo the key.
 """
 
 from __future__ import annotations
@@ -190,47 +152,31 @@ def run_setup(
     environ: Mapping[str, str] = os.environ,
     print_fn: Callable[..., None] = print,
 ) -> int:
-    """Run the full Phase 12 onboarding flow (D-76..D-82).
-
-    The orchestrator composes every prior phase's primitive into the ordered
-    onboarding. It is pure-ish: every side-effecting seam (input, getpass,
-    confirm, build, environ, print) is injectable, so tests run zero real IO.
+    """Run the full onboarding flow (D-76..D-82); all IO seams are injectable.
 
     Args:
-        paths: The resolved :class:`Paths` bundle (the caller passes
-            ``Paths.default()`` in production; tests pass
-            ``Paths.from_home(tmp_path)``).
-        yes: Non-interactive mode (D-79). When ``True`` every prompt is
-            bypassed: provider = ``"zai"``, shell helpers + LaunchAgent treated
-            as consented, API key REQUIRED from ``ZAI_API_KEY`` env.
-        dry_run: Preview mode (D-76). When ``True`` each step prints what it
-            WOULD do via ``print_fn`` and skips every mutating call.
-        provider: Explicit provider override (``"zai"`` / ``"openai"``). When
-            set, STEP 1 uses it and SKIPS the prompt — ``install_macro`` passes
-            ``"zai"`` so ``install`` always ends Z.ai-on regardless of any
-            interactive choice. ``None`` (default) → prompt (or ``"zai"`` under
-            ``yes``).
-        input_fn: The provider-choice input source (default builtin ``input``).
-        getpass_fn: The API-key input source (default ``getpass.getpass`` —
-            never echoes; SECR-01).
-        confirm_fn: The shared yes/no helper (default Phase 10 ``confirm`` —
-            the single path ``--yes`` / ``--no-input`` reuse, D-79).
-        build_fn: The Moon Bridge build primitive (default Phase 11
-            ``build_moonbridge`` — idempotent skip when the binary exists).
-        environ: The environment mapping read for ``ZAI_API_KEY`` (default
-            ``os.environ``; tests inject a fake).
-        print_fn: The output sink for the summary + dry-run previews (default
-            builtin ``print``). The API key is NEVER passed here (SECR-03).
+        paths: Resolved :class:`Paths` bundle.
+        yes: Headless mode (D-79): bypass prompts, default provider to zai,
+            require ZAI_API_KEY env.
+        dry_run: Preview mode (D-76): print diffs via print_fn, skip writes.
+        provider: Explicit override (``"zai"`` / ``"openai"``); ``None`` →
+            prompt (or zai under ``yes``).
+        input_fn: Provider-choice input (default builtin ``input``).
+        getpass_fn: API-key input (default ``getpass.getpass``, never echoes).
+        confirm_fn: Yes/no prompts (default ``confirm`` from Phase 10).
+        build_fn: Moon Bridge build (default Phase 11 ``build_moonbridge``,
+            idempotent).
+        environ: Environment source for ``ZAI_API_KEY`` (default ``os.environ``).
+        print_fn: Output sink (default builtin ``print``); key NEVER passed
+            (SECR-03).
 
     Returns:
-        0 on success. Does NOT call ``sys.exit``; does NOT catch
-        :class:`ZaiCodexHelperError` (D-11 — ``main()`` owns formatting).
+        0 on success. Does NOT call ``sys.exit``; propagates
+        :class:`ZaiCodexHelperError` to ``main()``.
 
     Raises:
-        ZaiCodexHelperError: if ``yes`` is True AND ``ZAI_API_KEY`` env is
-            unset (D-79 — no stdin available in headless mode); if the
-            interactive API key is empty; or if ``build_fn`` raises (a Go-missing
-            / clone-failed error propagates — setup does NOT auto-install, D-82).
+        ZaiCodexHelperError: if headless + ZAI_API_KEY unset (D-79); if key
+            malformed; or if ``build_fn`` raises (D-82: no auto-install).
     """
     # ------------------------------------------------------------------ #
     # STEP 1 (D-76) — PROVIDER CHOICE.
