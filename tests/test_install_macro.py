@@ -114,7 +114,7 @@ def test_run_setup_provider_override_forces_zai_over_prompt(tmp_path, monkeypatc
     the override at the run_setup seam (install_macro's non-provider prompts —
     shell/LaunchAgent consent — are covered by test_setup.py's headless flow).
     """
-    import tomllib
+    import tomlkit
 
     from zai_codex_helper.services.setup import run_setup
 
@@ -133,7 +133,8 @@ def test_run_setup_provider_override_forces_zai_over_prompt(tmp_path, monkeypatc
         confirm_fn=lambda *_a, **_k: True,
     )
 
-    doc = tomllib.loads(paths.config_toml.read_text(encoding="utf-8"))
+    # tomlkit (not tomllib — py3.10 floor has no tomllib; CLAUDE.md uses tomlkit).
+    doc = tomlkit.parse(paths.config_toml.read_text(encoding="utf-8"))
     assert doc["model_provider"] == "zai-moonbridge"  # Z.ai, not OpenAI
 
 

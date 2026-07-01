@@ -402,7 +402,13 @@ def test_install_dry_run_shows_config_diff_exactly_once(tmp_path, monkeypatch, c
     )
     before = _snapshot(tmp_path)
 
-    install_macro(paths, dry_run=True, headless=True)
+    # install_service gates on darwin FIRST (even under dry_run), so on Linux CI
+    # force the platform check to pass — this test is about the config diff, not
+    # the LaunchAgent. Mirrors test_dry_run_diff's install-service dry-run test.
+    from unittest import mock
+
+    with mock.patch("zai_codex_helper.services.lifecycle.sys.platform", "darwin"):
+        install_macro(paths, dry_run=True, headless=True)
 
     after = _snapshot(tmp_path)
     assert before == after, "install --dry-run mutated files"
