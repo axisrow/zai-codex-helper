@@ -955,3 +955,40 @@ def test_install_service_fresh_not_loaded_bootstraps(tmp_path, monkeypatch):
     assert rc == 0
     argvs = [c["argv"] for c in captured]
     assert any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_converged_repairs_plist_mode_without_bounce(
+    tmp_path, monkeypatch
+):
+    """Content matches canonical but the plist MODE drifted → repair mode, NO bounce.
+
+    _plist_drifted only compares parsed content, so a plist with canonical keys
+    but a wrong mode (e.g. 0600, which launchd rejects — it requires 0644) would
+    slip through the no-op gate unrepaired. The converged path does a canonical
+    rewrite (atomic write + chmod 0644) WITHOUT bootout/bootstrap: mode is fixed,
+    the running agent is not bounced.
+    """
+    import os
+
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    _seed_canonical_plist(paths)  # canonical content on disk
+    plist = paths.launchagents_dir / "dev.zai.moonbridge.plist"
+    os.chmod(plist, 0o600)  # drift the mode off launchd's required 0644
+    assert (plist.stat().st_mode & 0o777) == 0o600
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[_ok(["launchctl", "print"], "state = running")]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    # Mode repaired to launchd's 0644.
+    assert (plist.stat().st_mode & 0o777) == 0o644
+    # But the service was NOT bounced (no bootout/bootstrap).
+    argvs = [c["argv"] for c in captured]
+    assert not any("bootout" in a for a in argvs), argvs
+    assert not any("bootstrap" in a for a in argvs), argvs

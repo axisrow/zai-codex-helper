@@ -312,6 +312,13 @@ def install_service(
     if not force and not _plist_drifted(paths):
         loaded, _port = verify_service_loaded(paths, runner=runner)
         if loaded:
+            # Canonical rewrite (atomic write + chmod 0644) WITHOUT bootout/
+            # bootstrap: normalizes file metadata (e.g. a plist mode that drifted
+            # off launchd's required 0644) so "converged" means content AND mode
+            # are canonical — but the running agent is NOT bounced (launchd does
+            # not re-read the file on its own). _plist_drifted only compares
+            # parsed content, so this repair covers the metadata it can't see.
+            PlistBackend(paths).write_canonical(canonical_plist(paths))
             print("Moon Bridge already installed and running; nothing to do.")
             print("(use --force to reinstall)")
             return 0
