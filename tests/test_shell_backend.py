@@ -216,3 +216,60 @@ def test_shell_lands_at_0644(tmp_path):
 
     mode = (tmp_path / ".zshrc").stat().st_mode & 0o777
     assert mode == 0o644, f".zshrc landed at {oct(mode)}, expected 0o644"
+
+
+@pytest.mark.unit
+def test_shell_write_raw_writes_verbatim_no_fence(tmp_path):
+    """``write_raw`` writes the WHOLE text byte-for-byte, adding NO marker fence.
+
+    Unlike ``write_canonical`` (which wraps its arg in the fence), ``write_raw``
+    is the whole-file surface a caller like ``strip_foreign_codex_function`` uses
+    to rewrite the user's .zshrc verbatim — routed through the backend, not a
+    direct ``atomic_write``.
+    """
+    zshrc = tmp_path / ".zshrc"
+    backend = ShellBackend(Paths.from_home(tmp_path))
+    raw = "alias ll='ls -la'\n# user comment\nexport FOO=1\n"
+
+    backend.write_raw(raw)
+
+    written = zshrc.read_text(encoding="utf-8")
+    assert written == raw  # exact bytes, nothing added
+    assert MARKER_START not in written and MARKER_END not in written  # no fence
+
+
+@pytest.mark.unit
+def test_shell_write_raw_mode_none_lands_0600(tmp_path):
+    """``write_raw(mode=None)`` lands the file at 0600 (the atomic-write tempfile
+    default) regardless of the file's PRIOR mode — it does NOT chmod/preserve.
+
+    Seed at 0644 so this actually exercises the behavior: mode=None tightens it
+    to 0600 (matching atomic_write's contract). This is unchanged from the old
+    direct ``atomic_write(..., mode=None)`` the refactor replaced.
+    """
+    import os
+
+    zshrc = tmp_path / ".zshrc"
+    zshrc.write_text("old\n", encoding="utf-8")
+    os.chmod(zshrc, 0o644)  # a permissive prior mode
+    backend = ShellBackend(Paths.from_home(tmp_path))
+
+    backend.write_raw("new\n")
+
+    assert zshrc.read_text(encoding="utf-8") == "new\n"
+    assert (zshrc.stat().st_mode & 0o777) == 0o600  # mode=None → 0600, not 0644
+
+
+@pytest.mark.unit
+def test_shell_write_raw_explicit_mode(tmp_path):
+    """``write_raw`` honors an explicit mode (e.g. 0o644 to keep dotfile perms)."""
+    import os
+
+    zshrc = tmp_path / ".zshrc"
+    zshrc.write_text("old\n", encoding="utf-8")
+    os.chmod(zshrc, 0o600)
+    backend = ShellBackend(Paths.from_home(tmp_path))
+
+    backend.write_raw("new\n", mode=0o644)
+
+    assert (zshrc.stat().st_mode & 0o777) == 0o644
