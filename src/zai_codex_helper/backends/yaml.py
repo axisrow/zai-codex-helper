@@ -51,7 +51,25 @@ import yaml
 from zai_codex_helper.backends.base import ConfigBackend
 from zai_codex_helper.services.paths import Paths
 
-__all__ = ["YamlBackend"]
+__all__ = ["YamlBackend", "dump_canonical_yaml"]
+
+
+def dump_canonical_yaml(data) -> str:
+    """Serialize ``data`` with the ONE canonical ``yaml.safe_dump`` arg set.
+
+    The single source of the dump recipe (``sort_keys=False`` /
+    ``default_flow_style=False`` / ``allow_unicode=True``), so
+    :meth:`YamlBackend.write_canonical` and the dry-run preview
+    (``diff_preview``) produce byte-identical output — the "preview matches the
+    real write" contract lives in one place instead of a hand-copied arg set in
+    two modules. ``safe_dump`` ONLY (never bare ``yaml.dump`` — CLAUDE.md).
+    """
+    return yaml.safe_dump(
+        data,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )
 
 
 class YamlBackend(ConfigBackend):
@@ -144,10 +162,4 @@ class YamlBackend(ConfigBackend):
         This method does NOT call ``backup_once``: the ABC surface gates backup
         at a higher layer (D-38 analog — primitives only).
         """
-        serialized = yaml.safe_dump(
-            content,
-            sort_keys=False,
-            default_flow_style=False,
-            allow_unicode=True,
-        )
-        self._write_via_atomic(serialized, mode)
+        self._write_via_atomic(dump_canonical_yaml(content), mode)

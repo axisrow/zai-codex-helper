@@ -38,8 +38,8 @@ Library discipline (D-61, CLAUDE.md "What NOT to Use"): stdlib ``json`` only —
 ``json.loads`` for read, ``json.dumps`` for write. No new runtime dependency.
 
 Mode handling (D-DEFERRED-01): ``write_canonical`` defaults to ``mode=None``,
-which :func:`atomic_write` translates to the tempfile's umask-governed mode
-(empirically ``0o600``). ``models_cache.json`` holds NO secret (the API key
+which :func:`atomic_write` leaves at the tempfile's mode — ``0o600``,
+umask-INDEPENDENT (``mkstemp``). ``models_cache.json`` holds NO secret (the API key
 lives in ``moonbridge-zai.yml``, never here), so ``0o600`` is MORE restrictive
 than the conventional ``0o644`` cache-file mode but harmless (a more
 restrictive mode is never a security regression). A caller MAY pass an explicit

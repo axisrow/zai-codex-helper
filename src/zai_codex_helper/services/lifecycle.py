@@ -129,11 +129,6 @@ _ALREADY_LOADED_PATTERNS: tuple[str, ...] = (
     "input/output error",
 )
 
-#: Moon Bridge host/port — the single source of truth lives in providers.py;
-#: aliased here so the existing local use-sites read unchanged.
-_MOONBRIDGE_HOST = MOONBRIDGE_HOST
-_MOONBRIDGE_PORT = MOONBRIDGE_PORT
-
 #: Short timeout for the post-install port probe (D-86). Moon Bridge may need a
 #: moment to boot, so the probe fails fast rather than hanging the install.
 _PORT_PROBE_TIMEOUT = 3.0
@@ -337,7 +332,7 @@ def install_service(
         # be booting. Plain text to stderr, no Rich (CLAUDE.md D-04/D-05).
         sys.stderr.write(
             "WARNING: LaunchAgent is loaded but Moon Bridge is not yet "
-            f"responding on {_MOONBRIDGE_HOST}:{_MOONBRIDGE_PORT} "
+            f"responding on {MOONBRIDGE_HOST}:{MOONBRIDGE_PORT} "
             "(it may need a moment to boot).\n"
         )
 

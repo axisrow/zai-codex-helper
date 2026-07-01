@@ -39,11 +39,7 @@ from dataclasses import dataclass
 from tomlkit import TOMLDocument
 
 from zai_codex_helper.errors import ZaiCodexHelperError
-from zai_codex_helper.services.providers import (
-    ZAI_MODEL,
-    ZAI_PROVIDER_ID,
-    ZAI_REASONING_EFFORT,
-)
+from zai_codex_helper.services.providers import ZAI_PROVIDER_ID
 
 __all__ = [
     "ProviderDescriptor",
@@ -188,9 +184,3 @@ def read_for_status(backend) -> TOMLDocument | None:
         # main()'s D-11 formatter owns the one-line `error:` + exit 1. We do
         # NOT catch ZaiCodexHelperError itself (handled above).
         raise ZaiCodexHelperError(f"config.toml is not parseable: {e}") from e
-
-
-# Re-export the providers constants the handler uses for labels, so the status
-# path imports everything from one place (the model/effort values shown when
-# the config is missing/absent default to these canonical values).
-_ = (ZAI_MODEL, ZAI_REASONING_EFFORT)  # re-export touch (avoid unused import)

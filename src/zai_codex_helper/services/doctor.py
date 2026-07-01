@@ -315,17 +315,16 @@ def _check_auth_token(paths: Paths) -> CheckResult | None:
     ``auth_token`` is set, else None (nothing to report — canonical helper yml
     has none; loopback needs none).
     """
+    from zai_codex_helper.services.api_key import yml_has_auth_token
+
     backend = YamlBackend(paths)
     if not backend.exists():
         return None
-    data = backend.read()
-    if not isinstance(data, dict):
-        return None
-    server = data.get("server", {})
-    if not isinstance(server, dict):
-        return None
-    token = server.get("auth_token")
-    if not (isinstance(token, str) and token):
+    # Reuse the one predicate that owns "where does auth_token live in the yml"
+    # (api_key.yml_has_auth_token) instead of re-walking the server-dict here.
+    # (yml_has_auth_token treats a present-but-empty token as set, matching
+    # api_key/setup — an empty auth_token is still a misconfigured foreign yml.)
+    if not yml_has_auth_token(backend.read()):
         return None
     return CheckResult(
         name="Moon Bridge auth_token",

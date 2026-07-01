@@ -98,12 +98,6 @@ __all__ = [
 ]
 
 
-def canonical_moonbridge_yml(api_key: str) -> dict:
-    """Public alias for :func:`_canonical_moonbridge_yml (reused by set-key)."""
-    return _canonical_moonbridge_yml(api_key)
-
-
-
 #: Z.ai (BigModel) upstream — the REAL Moon Bridge config schema (verified
 #: against ``config.example.yml`` + the user's working yml). The key lives in
 #: ``providers.<name>.api_key`` (NOT a top-level ``ZAI_API_KEY`` — Moon Bridge
@@ -115,7 +109,7 @@ _ZAI_UPSTREAM_BASE_URL = "https://api.z.ai/api/coding/paas/v4/chat/completions"
 _ZAI_USER_AGENT = "moonbridge/1.0"
 
 
-def _canonical_moonbridge_yml(api_key: str) -> dict:
+def canonical_moonbridge_yml(api_key: str) -> dict:
     """The canonical ``moonbridge-zai.yml`` — a REAL Moon Bridge config body.
 
     Top-level ``mode`` / ``server`` (NO ``auth_token`` — loopback needs no
@@ -301,12 +295,13 @@ def run_setup(
     # top-level ZAI_API_KEY which Moon Bridge rejects with EX_CONFIG). The key
     # is embedded here but ONLY routed into YamlBackend.write_canonical — never
     # into print_fn.
-    yml_body = _canonical_moonbridge_yml(api_key)
+    yml_body = canonical_moonbridge_yml(api_key)
     # If an existing foreign Moon Bridge config has server.auth_token, Codex
     # gets 401 (it sends ZAI_API_KEY, Moon Bridge expects the auth_token). Ask
     # ONCE whether to switch to localhost-only (drop the token). No/declined →
     # leave the yml untouched + warn; Yes → backup once, then write canonical.
     from zai_codex_helper.services.api_key import (
+        AUTH_TOKEN_LEFT_WARNING,
         AUTH_TOKEN_PROMPT,
         yml_has_auth_token,
     )
@@ -314,10 +309,7 @@ def run_setup(
     yml_backend = YamlBackend(paths)
     existing = yml_backend.read() if yml_backend.exists() else None
     if yml_has_auth_token(existing) and not confirm_fn(AUTH_TOKEN_PROMPT):
-        print_fn(
-            "warning: Moon Bridge auth_token left in place — Codex will likely "
-            "get 401. Remove `server.auth_token` to fix (loopback needs no key)."
-        )
+        print_fn(AUTH_TOKEN_LEFT_WARNING)
     elif dry_run:
         # D-95: preview the would-be moonbridge-zai.yml as a REDACTED diff (the
         # key value NEVER reaches print_fn — preview_yml_change node-level

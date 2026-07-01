@@ -37,6 +37,8 @@ from pathlib import Path
 
 import yaml
 
+from zai_codex_helper.backends.yaml import dump_canonical_yaml
+
 __all__ = ["compute_diff", "preview_yml_change", "NO_CHANGES"]
 
 #: The literal returned by :func:`compute_diff` when the target text equals the
@@ -179,12 +181,7 @@ def _redact_yaml(text: str) -> str:
         return ""
     loaded = yaml.safe_load(text)
     redacted = _redact_secret_nodes(loaded)
-    return yaml.safe_dump(
-        redacted,
-        sort_keys=False,
-        default_flow_style=False,
-        allow_unicode=True,
-    )
+    return dump_canonical_yaml(redacted)
 
 
 def preview_yml_change(
@@ -213,11 +210,7 @@ def preview_yml_change(
     # `<redacted:99ff00aa>`) instead of collapsing to a misleading "(no changes)".
     # No new crash path: both callers already safe_load the current file before
     # preview, so a malformed yml has already raised upstream.
-    redacted_target = _redact_yaml(
-        yaml.safe_dump(
-            body, sort_keys=False, default_flow_style=False, allow_unicode=True
-        )
-    )
+    redacted_target = _redact_yaml(dump_canonical_yaml(body))
     current = path.read_text(encoding="utf-8") if path.exists() else ""
     redacted_current = _redact_yaml(current)
     print_fn(_diff_texts(path, redacted_current, redacted_target))
