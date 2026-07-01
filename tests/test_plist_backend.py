@@ -66,7 +66,7 @@ def test_canonical_plist_program_arguments_absolute_no_tilde(tmp_path):
     pa = canonical_plist(paths)["ProgramArguments"]
     assert isinstance(pa, list)
     assert len(pa) == 3
-    assert pa[0] == str(paths.codex_dir / "moon-bridge")
+    assert pa[0] == str(paths.moonbridge_binary)
     assert pa[1] == "-config"
     assert pa[2] == str(paths.moonbridge_yml)
     # NO literal tilde anywhere — launchd does not expand it (T-09-04)
@@ -114,7 +114,7 @@ def test_plist_write_emits_full_canonical_xml(tmp_path):
     assert "<key>ProgramArguments</key>" in text
     assert "<array>" in text
     # Binary path appears as a <string> inside <array>, NO literal ~
-    assert str(paths.codex_dir / "moon-bridge") in text
+    assert str(paths.moonbridge_binary) in text
     assert "~" not in text
 
 

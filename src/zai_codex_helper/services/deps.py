@@ -183,24 +183,24 @@ def detect_brew() -> DepResult:
 
 
 def detect_moonbridge_binary(paths: Paths) -> DepResult:
-    """Detect ``paths.codex_dir / "moon-bridge"`` (exists + executable) (D-63).
+    """Detect the Moon Bridge binary (exists + executable) (D-63).
 
-    Read-only: ``Path.exists`` + ``os.stat``/``stat.S_IXUSR``. Takes the
-    INJECTED :class:`Paths` — never a module-level ``~/.codex`` literal
-    (D-22/D-23); the caller (Phase 12 ``setup``) injects ``Paths.default()``
-    or a tmp home in tests.
+    Checks ``paths.moonbridge_binary`` (``~/.codex/bin/moonbridge`` — the
+    canonical install path), with a fallback to the legacy
+    ``paths.codex_dir / "moon-bridge"`` for users who built it there before
+    the path was fixed. Read-only: ``Path.exists`` + ``stat.S_IXUSR``.
 
     Args:
-        paths: injected Paths; only ``paths.codex_dir`` is read.
+        paths: injected Paths.
 
     Returns:
         ``DepResult``. ``present=True`` with ``path=str(binary)`` and
-        ``detail=None`` when the file exists AND has the owner-execute bit;
+        ``detail=None`` when an executable binary is found at either path;
         ``present=False`` otherwise.
     """
-    binary = paths.codex_dir / "moon-bridge"
-    if _is_executable_file(binary):
-        return DepResult(present=True, path=str(binary), version=None, detail=None)
+    for binary in (paths.moonbridge_binary, paths.codex_dir / "moon-bridge"):
+        if _is_executable_file(binary):
+            return DepResult(present=True, path=str(binary), version=None, detail=None)
     return DepResult(present=False, path=None, version=None, detail=None)
 
 

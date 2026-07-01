@@ -220,7 +220,9 @@ def test_setup_dry_run_redacts_api_key_and_writes_nothing(
        no .zshrc, no config.toml, no .bak written).
     """
     # A distinctive canary that would be trivially greppable if it leaked.
-    canary = "sk-test-FAKE-DO-NOT-USE"
+    # MUST match the real Z.ai (BigModel) format validated by
+    # setup.validate_api_key(): <32-hex>.<16-alnum>.
+    canary = "c0ffee22222222222222222222222222.FAKEcanary123456"
     monkeypatch.setenv("ZAI_API_KEY", canary)
     paths = Paths.from_home(tmp_path)
     before = _snapshot(tmp_path)
@@ -240,8 +242,8 @@ def test_setup_dry_run_redacts_api_key_and_writes_nothing(
     combined = out.out + out.err
     # D-77 / T-15-01: the canary NEVER appears in the preview output.
     assert canary not in combined, "API key canary leaked into dry-run output"
-    # The redaction seam: the user sees the key WOULD be written (redacted).
-    assert "ZAI_API_KEY: <redacted>" in combined
+    # The redaction seam: the key line (providers.zai.api_key) is redacted.
+    assert "api_key: <redacted>" in combined
 
 
 # =========================================================================== #

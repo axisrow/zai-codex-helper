@@ -63,12 +63,15 @@ import yaml
 
 from zai_codex_helper.__main__ import ZaiCodexHelperError, main
 from zai_codex_helper.cli.parser import build_parser
+from zai_codex_helper.services import setup
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.setup import run_setup
 
 # A recognizable API key literal used by the SECR-03 canary test. Distinctive
-# so it would surface in ANY accidental print/log of the key.
-_CANARY_KEY = "sk-LEAK-CANARY-1234567890"
+# so it would surface in ANY accidental print/log of the key. MUST match the
+# real Z.ai (BigModel) format validated by setup.validate_api_key():
+# ``<32-hex>.<16-alnum>``.
+_CANARY_KEY = "c0ffee11111111111111111111111111.LEAKcanary123456"
 
 
 def _write(path: Path, data: bytes | str) -> None:
@@ -89,7 +92,8 @@ def _precreate_binary(tmp_path: Path) -> Path:
     subprocess runs (the documented SIMPLEST FIX for testability through
     ``main([...])``). Returns the binary path.
     """
-    binary = tmp_path / ".codex" / "moon-bridge"
+    binary = tmp_path / ".codex" / "bin" / "moonbridge"
+    binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(b"#!/bin/sh\nexit 0\n")
     os.chmod(binary, 0o755)
     # Sanity: the skip predicate must see it as executable.
@@ -119,7 +123,9 @@ def test_setup_interactive_full_flow_sc1(tmp_path, monkeypatch):
     """
     _precreate_binary(tmp_path)
     paths = Paths.from_home(tmp_path)
-    monkeypatch.setenv("ZAI_API_KEY", "sk-test-SETUP-01")
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
 
     # Injected seams simulate the interactive user: provider choice + consent.
     inputs = iter(["zai"])
@@ -152,9 +158,14 @@ def test_setup_interactive_full_flow_sc1(tmp_path, monkeypatch):
     assert yml.exists()
     assert (yml.stat().st_mode & 0o777) == 0o600
     data = yaml.safe_load(yml.read_text())
-    assert data["ZAI_API_KEY"] == "sk-test-SETUP-01"
-    assert data["model"] == "glm-5.2"
-    assert data["server"] == {"host": "127.0.0.1", "port": 38440}
+    # Canonical body — REAL Moon Bridge schema (key under providers.zai.api_key).
+    assert (
+        data["providers"]["zai"]["api_key"]
+        == "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+    assert data["mode"] == "Transform"
+    assert data["server"] == {"addr": "127.0.0.1:38440"}
+    assert "ZAI_API_KEY" not in data  # no legacy top-level key
     # .zshrc marker fence written.
     zshrc = tmp_path / ".zshrc"
     assert zshrc.exists()
@@ -185,7 +196,9 @@ def test_setup_yes_flag_scriptable_sc2(tmp_path, monkeypatch, capsys):
     would raise instead of passing).
     """
     _precreate_binary(tmp_path)
-    monkeypatch.setenv("ZAI_API_KEY", "sk-test-SETUP-02")
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "22222222222222222222222222222222.bbbbbbbbbbbbbbbb"
+    )
 
     # The headless path must NOT call any of these. Supply raising fakes via
     # direct run_setup injection to prove the headless bypass; the main([...])
@@ -231,8 +244,11 @@ def test_setup_yes_flag_scriptable_sc2(tmp_path, monkeypatch, capsys):
     yml = tmp_path / ".codex" / "moonbridge-zai.yml"
     assert (yml.stat().st_mode & 0o777) == 0o600
     data = yaml.safe_load(yml.read_text())
-    assert data["ZAI_API_KEY"] == "sk-test-SETUP-02"
-    assert data["model"] == "glm-5.2"
+    assert (
+        data["providers"]["zai"]["api_key"]
+        == "22222222222222222222222222222222.bbbbbbbbbbbbbbbb"
+    )
+    assert data["mode"] == "Transform"
     zshrc = tmp_path / ".zshrc"
     assert "# >>> zai-codex-helper >>>" in zshrc.read_text()
     doc = _read_back_toml(tmp_path / ".codex" / "config.toml")
@@ -254,7 +270,9 @@ def test_setup_twice_byte_identical_sc3(tmp_path, monkeypatch):
     AND ``.zshrc`` contains EXACTLY ONE marker fence (no append/dup).
     """
     _precreate_binary(tmp_path)
-    monkeypatch.setenv("ZAI_API_KEY", "sk-test-SETUP-03-idempotent")
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "33333333333333333333333333333333.cccccccccccccccc"
+    )
 
     assert main(["--yes", "setup"]) == 0
     cfg = tmp_path / ".codex" / "config.toml"
@@ -364,7 +382,9 @@ def test_setup_no_launchctl_call_d78(tmp_path, monkeypatch, capsys):
     so captured stdout MUST contain ``install-service``.
     """
     _precreate_binary(tmp_path)
-    monkeypatch.setenv("ZAI_API_KEY", "sk-test-D-78")
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "44444444444444444444444444444444.dddddddddddddddd"
+    )
 
     captured_argv: list[list[str]] = []
 
@@ -446,3 +466,126 @@ def test_doctor_is_real_handler_install_uninstall_are_real():
     assert args.func.__name__ == "_handle_doctor", (
         f"doctor should resolve to _handle_doctor, got {args.func.__name__}"
     )
+
+
+# ---------------------------------------------------------------------------
+# validate_api_key — strict Z.ai (BigModel) format check (<32-hex>.<16-alnum>)
+# ---------------------------------------------------------------------------
+
+_VALID = "00000000000000000000000000000000.aaaaaaaaaaaaaaaa"
+
+
+@pytest.mark.unit
+def test_validate_api_key_accepts_real_format():
+    """A real-shape Z.ai key (<32-hex>.<16-alnum>) passes validation."""
+    setup.validate_api_key(_VALID)  # no raise
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad,why",
+    [
+        ("", "empty"),
+        ("sdfklsjdlfkjsdkfjsldjf", "garbage"),
+        ("sk-test-SETUP-01", "OpenAI-style sk- token (wrong provider/format)"),
+        ("00000000000000000000000000000000", "missing .<16-alnum> half"),
+        ("aaaaaaaaaaaaaaaa", "missing <32-hex> half"),
+        ("00000000000000000000000000000000.aaaaaaaaaaaaaaa", "wrong tail length"),
+        ("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.aaaaaaaaaaaaaaaa", "non-hex left half"),
+        ("00000000000000000000000000000000.aaaaaaaaaaaaaa!", "non-alnum tail char"),
+    ],
+)
+def test_validate_api_key_rejects_malformed(bad, why):
+    """Malformed keys (garbage, wrong format, wrong halves/lengths) raise."""
+    with pytest.raises(ZaiCodexHelperError, match="API key"):
+        setup.validate_api_key(bad)
+
+
+@pytest.mark.unit
+def test_prompt_api_key_retries_then_succeeds(monkeypatch, capsys):
+    """A malformed first attempt is retried; a valid second attempt is accepted.
+
+    Drives the interactive retry-loop: the echoed prompt + validate run per
+    attempt; on a malformed key the loop prints a hint and re-prompts (up to
+    ``max_attempts``).
+    """
+    answers = iter(["sdf", _VALID])
+    result = setup._prompt_api_key(lambda _p: next(answers))
+    assert result == _VALID
+    # The retry hint reuses validate_api_key's exact message (one source).
+    assert "malformed" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+def test_prompt_api_key_gives_up_after_max_attempts(monkeypatch):
+    """After max_attempts malformed inputs, the last ZaiCodexHelperError propagates."""
+    answers = iter(["bad", "bad", "bad"])
+    with pytest.raises(ZaiCodexHelperError, match="API key"):
+        setup._prompt_api_key(lambda _p: next(answers), max_attempts=3)
+
+
+@pytest.mark.unit
+def test_setup_rejects_malformed_env_key(tmp_path, monkeypatch):
+    """A malformed ZAI_API_KEY env value fails fast — never reaches moonbridge-zai.yml."""
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv("ZAI_API_KEY", "not-a-real-key")
+    with pytest.raises(ZaiCodexHelperError, match="malformed"):
+        setup.run_setup(paths, yes=True)
+    assert not (tmp_path / ".codex" / "moonbridge-zai.yml").exists()
+
+
+@pytest.mark.unit
+def test_setup_drops_auth_token_on_yes(tmp_path, monkeypatch):
+    """Foreign yml with server.auth_token + Yes → backup created, canonical yml written (no token)."""
+    _precreate_binary(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+    # Seed a FOREIGN yml with server.auth_token.
+    yml = tmp_path / ".codex" / "moonbridge-zai.yml"
+    yml.write_text(
+        "ZAI_API_KEY: old\n"
+        "mode: Transform\n"
+        "server:\n"
+        "  addr: 127.0.0.1:38440\n"
+        "  auth_token: sk-moonbridge-zai-local\n"
+    )
+
+    rc = run_setup(
+        paths, yes=False, input_fn=lambda _p: "zai", confirm_fn=lambda *_a, **_k: True
+    )
+
+    assert rc == 0
+    data = yaml.safe_load(yml.read_text())
+    # Canonical body written (setup canonicalizes), no auth_token.
+    assert "auth_token" not in data.get("server", {})
+    # One-shot backup of the original foreign yml exists.
+    assert (tmp_path / ".codex" / "moonbridge-zai.yml.zai-codex-helper.bak").exists()
+
+
+@pytest.mark.unit
+def test_setup_skips_auth_token_removal_on_no(tmp_path, monkeypatch, capsys):
+    """Foreign yml + No → yml left untouched, warning printed."""
+    _precreate_binary(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+    yml = tmp_path / ".codex" / "moonbridge-zai.yml"
+    original = (
+        "ZAI_API_KEY: old\n"
+        "server:\n"
+        "  addr: 127.0.0.1:38440\n"
+        "  auth_token: sk-moonbridge-zai-local\n"
+    )
+    yml.write_text(original)
+
+    rc = run_setup(
+        paths, yes=False, input_fn=lambda _p: "zai", confirm_fn=lambda *_a, **_k: False
+    )
+
+    assert rc == 0
+    # yml untouched (auth_token left).
+    assert yml.read_text() == original
+    assert "401" in capsys.readouterr().out

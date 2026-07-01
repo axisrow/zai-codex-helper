@@ -367,7 +367,9 @@ def test_setup_wires_models_cache_step(tmp_path, monkeypatch):
     paths = Paths.from_home(tmp_path)
     # Seed the models_cache with the 5-model fixture (the user's pre-existing state).
     _seed_cache(paths)
-    monkeypatch.setenv("ZAI_API_KEY", "sk-setup-models-cache-9")
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "55555555555555555555555555555555.eeeeeeeeeeeeeeee"
+    )
 
     # Capture prints (the summary line confirms the step ran).
     printed: list[str] = []
@@ -409,7 +411,9 @@ def test_setup_dry_run_models_cache_no_mutation_with_diff(tmp_path, monkeypatch)
     # Seed models_cache — capture the EXACT seed bytes for the no-mutation proof.
     _seed_cache(paths)
     seed_bytes = paths.models_cache.read_bytes()
-    monkeypatch.setenv("ZAI_API_KEY", "sk-dry-run-models-cache-10")
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "66666666666666666666666666666666.ffffffffffffffff"
+    )
 
     printed: list[str] = []
 

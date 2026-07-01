@@ -104,10 +104,15 @@ _ALREADY_BOOTED_OUT_PATTERNS: tuple[str, ...] = (
 #: Known launchctl "already loaded" patterns (D-83 — idempotent install).
 #: bootstrap returns non-zero with one of these in stderr when the agent is
 #: already registered — that is idempotent SUCCESS for install, NOT an error.
-#: Substring-matched against the LOWERCASED stderr.
+#: Includes "input/output error": macOS launchctl returns rc=5 + this EIO
+#: message when the agent is already bootstrapped into a conflicted state —
+#: the same goal as "already bootstrapped" (mirrors bootout's
+#: :data:`_ALREADY_BOOTED_OUT_PATTERNS`). Substring-matched against the
+#: LOWERCASED stderr.
 _ALREADY_LOADED_PATTERNS: tuple[str, ...] = (
     "already bootstrapped",
     "already loaded",
+    "input/output error",
 )
 
 #: The port Moon Bridge listens on (CLAUDE.md "Moon Bridge": 127.0.0.1:38440).

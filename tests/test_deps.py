@@ -215,7 +215,8 @@ def test_detect_brew_absent(monkeypatch, tmp_path):
 def test_detect_moonbridge_binary_present_executable(tmp_path):
     """present=True only when ~/.codex/moon-bridge exists AND is executable."""
     paths = Paths.from_home(tmp_path)
-    binary = paths.codex_dir / "moon-bridge"
+    binary = paths.moonbridge_binary
+    binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_text("#!/bin/sh\n")
     os.chmod(binary, 0o755)
 
@@ -239,7 +240,8 @@ def test_detect_moonbridge_binary_absent(tmp_path):
 def test_detect_moonbridge_binary_present_but_not_executable(tmp_path):
     """present=False when the file exists but is NOT executable (stat.S_IXUSR)."""
     paths = Paths.from_home(tmp_path)
-    binary = paths.codex_dir / "moon-bridge"
+    binary = paths.moonbridge_binary
+    binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_text("not executable\n")
     # 0o644 — no execute bit for owner.
     os.chmod(binary, 0o644)

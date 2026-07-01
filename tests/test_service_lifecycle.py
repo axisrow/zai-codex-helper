@@ -265,6 +265,38 @@ def test_install_service_already_loaded_is_idempotent_success(tmp_path, monkeypa
     assert rc == 0
 
 
+@pytest.mark.unit
+def test_install_service_swallows_input_output_error_eio(tmp_path, monkeypatch):
+    """bootstrap "Input/output error" (EIO) rc 5 → idempotent success (D-83).
+
+    macOS launchctl returns rc=5 + "Input/output error" when the agent is
+    already bootstrapped into a conflicted state — the same goal as "already
+    bootstrapped", so install must treat it as idempotent success and proceed
+    to verify, not raise. Mirrors the bootout EIO case
+    (:func:`test_uninstall_service_swallows_input_output_error_eio`); the
+    bootstrap path previously missed this pattern and crashed on re-install.
+    """
+    _darwin(monkeypatch)
+    _uid(monkeypatch)
+    paths = Paths.from_home(tmp_path)
+    runner, _ = _recording_runner(
+        responses=[
+            subprocess.CompletedProcess(
+                ["launchctl", "bootstrap"],
+                5,
+                stdout="",
+                stderr="Bootstrap failed: 5: Input/output error",
+            ),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+    _patch_port(monkeypatch, connects=True)
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+
+
 # ---------------------------------------------------------------------------
 # SC-2 / SERV-02 — uninstall_service (D-84)
 # ---------------------------------------------------------------------------

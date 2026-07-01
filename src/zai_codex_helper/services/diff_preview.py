@@ -33,9 +33,12 @@ from __future__ import annotations
 
 import difflib
 import re
+from collections.abc import Callable
 from pathlib import Path
 
-__all__ = ["compute_diff", "redact_secrets", "NO_CHANGES"]
+import yaml
+
+__all__ = ["compute_diff", "preview_yml_change", "redact_secrets", "NO_CHANGES"]
 
 #: The literal returned by :func:`compute_diff` when the target text equals the
 #: current file text (or both are empty). The dry-run branches print this verbatim
@@ -48,14 +51,15 @@ NO_CHANGES = "(no changes)"
 #: NEVER reaches stdout when the setup dry-run branch previews the yml.
 _REDACTED_PLACEHOLDER = "<redacted>"
 
-#: Regex matching the canonical ``moonbridge-zai.yml`` ``ZAI_API_KEY`` line shape
-#: produced by ``yaml.safe_dump``: ``ZAI_API_KEY: <value>`` (YAML plain scalar;
-#: the value may be quoted or unquoted, and may contain most printable chars).
-#: The match is anchored on the key name + ``:`` so a comment or docstring that
-#: merely MENTIONS ``ZAI_API_KEY`` (without the YAML ``: `` mapping) is NOT
-#: touched (T-15-05 — narrow pattern, no false positive on the env-read name).
+#: Regex matching any line in ``moonbridge-zai.yml`` that carries a secret.
+#: The Z.ai key lives in ``providers.<name>.api_key`` (Moon Bridge's real
+#: schema), but legacy helper versions also wrote a top-level ``ZAI_API_KEY``.
+#: Both must be redacted before a dry-run diff reaches stdout. Matches a YAML
+#: mapping line whose key is ``ZAI_API_KEY`` OR ends with ``api_key`` (catches
+#: the nested ``    api_key: <value>`` under providers). Anchored on ``:`` so a
+#: comment/docstring that merely MENTIONS the name is NOT touched.
 _ZAI_API_KEY_LINE_RE = re.compile(
-    r"^(ZAI_API_KEY:).*$",
+    r"^(\s*(?:ZAI_API_KEY|.*api_key):).*$",
     re.MULTILINE,
 )
 
@@ -165,3 +169,27 @@ def redact_secrets(text: str) -> str:
         lambda m: f"{m.group(1)} {_REDACTED_PLACEHOLDER}",
         text,
     )
+
+
+def preview_yml_change(
+    path: Path,
+    body: dict,
+    print_fn: Callable[..., None],
+) -> None:
+    """Print a REDACTED unified diff of the would-be ``moonbridge-zai.yml`` write.
+
+    The single shared dry-run-preview path for every yml-mutating command
+    (``setup`` step 3, ``set-key``). Serializes ``body`` with the
+    CLAUDE.md-canonical ``yaml.safe_dump`` args (matching what
+    :meth:`YamlBackend.write_canonical` produces byte-for-byte), redacts the
+    ``ZAI_API_KEY`` value via :func:`redact_secrets`, computes the diff against
+    the on-disk file via :func:`compute_diff`, and prints it. The key value
+    NEVER reaches stdout.
+    """
+    serialized = yaml.safe_dump(
+        body,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )
+    print_fn(compute_diff(path, redact_secrets(serialized)))

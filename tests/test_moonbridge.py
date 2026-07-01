@@ -117,7 +117,7 @@ def _patch_detect_go(monkeypatch, *, present, version):
 
 def _seed_binary(paths):
     """Write a fake owner-executable binary so the idempotency skip fires."""
-    binary = paths.codex_dir / "moon-bridge"
+    binary = paths.moonbridge_binary
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(b"fake-binary")
     os.chmod(binary, 0o755)
@@ -300,7 +300,7 @@ def test_command_sequence_clone_checkout_build(tmp_path, monkeypatch):
 
     # 3. go build -o <binary> ./cmd/moonbridge  with cwd=<clone_dir>
     build = captured[2]
-    expected_binary = str(paths.codex_dir / "moon-bridge")
+    expected_binary = str(paths.moonbridge_binary)
     assert build["argv"][:2] == ["go", "build"]
     assert build["argv"][2] == "-o"
     assert build["argv"][3] == expected_binary
@@ -330,7 +330,7 @@ def test_idempotent_skip_when_binary_exists_and_executable(tmp_path, monkeypatch
 
     result = mb.build_moonbridge(paths, force=False, runner=runner)
 
-    assert result == paths.codex_dir / "moon-bridge"
+    assert result == paths.moonbridge_binary
     assert captured == []
 
 
@@ -374,7 +374,7 @@ def test_binary_chmod_0755_after_build(tmp_path, monkeypatch):
 
     mb.build_moonbridge(paths, force=True, runner=runner)
 
-    expected = str(paths.codex_dir / "moon-bridge")
+    expected = str(paths.moonbridge_binary)
     binary_chmods = [c for c in chmod_calls if c[0] == expected]
     assert len(binary_chmods) == 1
     assert binary_chmods[0][1] == 0o755
@@ -499,7 +499,7 @@ def test_no_vendoring_wheel_packages_exclude_binary(tmp_path, monkeypatch):
 
     build_argv = captured[2]["argv"]
     binary_target = build_argv[3]  # the -o argument
-    assert binary_target == str(paths.codex_dir / "moon-bridge")
+    assert binary_target == str(paths.moonbridge_binary)
     # The binary target is under tmp_path/.codex, NOT under the package src/.
     src_dir = str(repo_root / "src")
     assert not binary_target.startswith(src_dir), (
