@@ -1050,8 +1050,7 @@ def test_install_service_unreadable_plist_shapes_self_heal(
     paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
     plist_path = paths.launchagents_dir / "dev.zai.moonbridge.plist"
     if seed == "dir":
-        plist_path.mkdir()
-        (plist_path / "stray.txt").write_text("junk")  # non-empty → rmtree recurses
+        plist_path.mkdir()  # empty dir → atomic_write os.rmdir's it (non-empty is refused)
     elif seed == "truncated":
         full_xml = plistlib.dumps(canonical_plist(paths), fmt=plistlib.FMT_XML)
         plist_path.write_bytes(full_xml[: len(full_xml) // 2])  # cut mid-tag
