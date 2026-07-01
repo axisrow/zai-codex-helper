@@ -14,8 +14,9 @@ Module name is load-bearing (D-62): ``json_backend.py`` (not ``json.py``) avoids
 shadowing stdlib ``json``. Library discipline (D-61): stdlib ``json`` only.
 
 Mode handling (D-DEFERRED-01): ``mode=None`` defaults to tempfile's ``0o600`` (safe;
-API key lives in ``moonbridge-zai.yml``, not here). Scope (D-38 analog): merge
-primitive only — no schema, no model-metadata logic.
+API key lives in ``moonbridge-zai.yml``, not here). Beyond the generic
+deep-merge, :func:`merge_model_list` special-cases the ``models`` list
+(replace-by-slug) so the Phase 15 fix preserves the user's other model entries.
 """
 
 from __future__ import annotations

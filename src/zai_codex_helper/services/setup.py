@@ -1,13 +1,15 @@
 """The ``setup`` onboarding orchestrator composing primitives from prior phases.
 
 Orchestrates Paths → backup → moonbridge-zai.yml → Moon Bridge build → shell
-helpers → provider apply → LaunchAgent offer into a single ``zai-codex-helper
-setup`` flow. Adds NO domain logic; only composes already-proven primitives.
+helpers → provider apply → models_cache glm-5.2 entry → LaunchAgent offer into a
+single ``zai-codex-helper setup`` flow. Adds NO domain logic; only composes
+already-proven primitives.
 
-DECISIONS HONORED (D-76..D-82):
+DECISIONS HONORED (D-76..D-82, D-98):
 
 - **D-76:** ordered STEP sequence (provider → key → yml → build → shell →
-  apply → offer → summary); all prompts routed through injected functions.
+  apply → models_cache glm-5.2 entry (STEP 6.5, D-98/SC-4) → offer → summary);
+  all prompts routed through injected functions.
 - **D-77 (SECR-01/03):** API key ``ZAI_API_KEY`` env or getpass (NEVER echoed);
   flows ONLY to YamlBackend.write_canonical at 0600; NEVER to print_fn/logs.
 - **D-78:** LaunchAgent is confirm-only (prints install-service hint, no plist).
