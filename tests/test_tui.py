@@ -72,6 +72,103 @@ def test_dispatch_toggle_zai_flips_provider(monkeypatch):
     assert applied == ["apply_openai"]
 
 
+#: A well-formed Z.ai key (``<32-hex>.<16-alnum>``) for the prompt mocks below.
+_FAKE_KEY = "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+
+
+@pytest.mark.unit
+def test_dispatch_install_prompts_key_when_env_unset(monkeypatch):
+    """#11: env unset + real run → TUI prompts, key flows into install_macro's environ."""
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+
+    prompts = []
+    monkeypatch.setattr(
+        "zai_codex_helper.services.setup._prompt_api_key",
+        lambda _gp: prompts.append(True) or _FAKE_KEY,
+    )
+    seen = {}
+    monkeypatch.setattr(
+        "zai_codex_helper.services.install.install_macro",
+        lambda paths, **kw: seen.update(kw),
+    )
+
+    tui._dispatch("macro-install", argparse.Namespace(), _ns(), (False, False, ""))
+
+    assert prompts == [True]  # prompted exactly once
+    assert seen["environ"] == {"ZAI_API_KEY": _FAKE_KEY}  # key reached install
+    assert seen["headless"] is True
+
+
+@pytest.mark.unit
+def test_dispatch_install_no_prompt_when_env_set(monkeypatch):
+    """Env already set → no prompt; install_macro gets environ=None (reads os.environ)."""
+    monkeypatch.setenv("ZAI_API_KEY", _FAKE_KEY)
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+
+    prompted = []
+    monkeypatch.setattr(
+        "zai_codex_helper.services.setup._prompt_api_key",
+        lambda _gp: prompted.append(True) or _FAKE_KEY,
+    )
+    seen = {}
+    monkeypatch.setattr(
+        "zai_codex_helper.services.install.install_macro",
+        lambda paths, **kw: seen.update(kw),
+    )
+
+    tui._dispatch("macro-install", argparse.Namespace(), _ns(), (False, False, ""))
+
+    assert prompted == []  # env present → never prompted
+    assert seen["environ"] is None  # run_setup falls back to os.environ
+
+
+@pytest.mark.unit
+def test_dispatch_install_dry_run_skips_prompt(monkeypatch):
+    """--dry-run is a preview: never prompt for a secret, even with env unset."""
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+
+    prompted = []
+    monkeypatch.setattr(
+        "zai_codex_helper.services.setup._prompt_api_key",
+        lambda _gp: prompted.append(True) or _FAKE_KEY,
+    )
+    seen = {}
+    monkeypatch.setattr(
+        "zai_codex_helper.services.install.install_macro",
+        lambda paths, **kw: seen.update(kw),
+    )
+
+    dry = argparse.Namespace(dry_run=True)
+    tui._dispatch("macro-install", argparse.Namespace(), dry, (False, False, ""))
+
+    assert prompted == []  # dry-run → no secret collected
+    assert seen["environ"] is None
+    assert seen["dry_run"] is True
+
+
+@pytest.mark.unit
+def test_dispatch_install_never_echoes_key(monkeypatch, capsys):
+    """SECR-01/03: the collected key must not appear in stdout/stderr."""
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    monkeypatch.setattr(
+        "zai_codex_helper.services.setup._prompt_api_key",
+        lambda _gp: _FAKE_KEY,
+    )
+    monkeypatch.setattr(
+        "zai_codex_helper.services.install.install_macro",
+        lambda paths, **kw: None,
+    )
+
+    tui._dispatch("macro-install", argparse.Namespace(), _ns(), (False, False, ""))
+
+    out = capsys.readouterr()
+    assert _FAKE_KEY not in out.out
+    assert _FAKE_KEY not in out.err
+
+
 @pytest.mark.unit
 def test_is_disabled_install_when_fully_on():
     """Install disabled iff Z.ai active AND Moon Bridge loaded."""

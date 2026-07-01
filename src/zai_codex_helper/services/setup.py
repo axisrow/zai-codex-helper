@@ -63,7 +63,7 @@ import getpass
 import os
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from zai_codex_helper.backends.shell import ShellBackend
@@ -170,7 +170,7 @@ def run_setup(
     getpass_fn: Callable[[str], str] = getpass.getpass,
     confirm_fn: Callable[..., bool] = confirm,
     build_fn: Callable[..., Any] = build_moonbridge,
-    environ: os._Environ[str] = os.environ,
+    environ: Mapping[str, str] = os.environ,
     print_fn: Callable[..., None] = print,
 ) -> int:
     """Run the full Phase 12 onboarding flow (D-76..D-82).
