@@ -352,7 +352,7 @@ def test_atomic_write_refuses_to_delete_a_non_empty_directory(tmp_path):
     dest.mkdir()
     (dest / "precious.txt").write_text("do not delete")
 
-    with pytest.raises(OSError):  # ENOTEMPTY (IsADirectoryError/OSError subclass)
+    with pytest.raises(OSError):  # os.rmdir on a non-empty dir → OSError (ENOTEMPTY)
         atomic_write(dest, b"canonical")
 
     # The directory and its contents survive untouched — no recursive delete.
