@@ -276,7 +276,9 @@ def _handle_use_zai(args: argparse.Namespace) -> int:
 
     # Phase 15 (D-95): forward the root --dry-run flag so `use zai --dry-run`
     # previews the would-be config.toml change as a diff and writes nothing.
-    _apply_provider_pipeline(apply_zai, sys.stderr, dry_run=getattr(args, 'dry_run', False))
+    _apply_provider_pipeline(
+        apply_zai, sys.stderr, dry_run=getattr(args, "dry_run", False)
+    )
     return 0
 
 
@@ -305,7 +307,9 @@ def _handle_use_openai(args: argparse.Namespace) -> int:
 
     # Phase 15 (D-95): forward the root --dry-run flag so `use openai --dry-run`
     # previews the would-be config.toml change as a diff and writes nothing.
-    _apply_provider_pipeline(apply_openai, sys.stderr, dry_run=getattr(args, 'dry_run', False))
+    _apply_provider_pipeline(
+        apply_openai, sys.stderr, dry_run=getattr(args, "dry_run", False)
+    )
     return 0
 
 
@@ -491,7 +495,7 @@ def _handle_install_service(args: argparse.Namespace) -> int:
     # Phase 15 (D-95): forward the root --dry-run flag so
     # `install-service --dry-run` prints a "would write plist + bootstrap"
     # summary and writes/calls nothing.
-    return install_service(paths, dry_run=getattr(args, 'dry_run', False))
+    return install_service(paths, dry_run=getattr(args, "dry_run", False))
 
 
 def _handle_uninstall_service(args: argparse.Namespace) -> int:
@@ -563,9 +567,49 @@ def _handle_setup(args: argparse.Namespace) -> int:
     paths = Paths.default()
     return run_setup(
         paths,
-        yes=getattr(args, 'yes', False) or getattr(args, 'no_input', False),
-        dry_run=getattr(args, 'dry_run', False),
+        yes=getattr(args, "yes", False) or getattr(args, "no_input", False),
+        dry_run=getattr(args, "dry_run", False),
     )
+
+
+def _handle_install(args: argparse.Namespace) -> int:
+    """Macro: turn Z.ai ON end-to-end — one command for the Core Value.
+
+    Delegates to :func:`install_macro` (single source of truth, shared with the
+    TUI). After this, a bare ``codex`` (no flags/env/profile — what BOTH Codex
+    CLI and Desktop read) starts on Z.ai. Does NOT catch
+    :class:`ZaiCodexHelperError` (D-11 — owned by :func:`main`).
+    """
+    from zai_codex_helper.services.install import install_macro
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.default()
+    install_macro(
+        paths,
+        apply_pipeline=_apply_provider_pipeline,
+        dry_run=getattr(args, "dry_run", False),
+        headless=getattr(args, "yes", False) or getattr(args, "no_input", False),
+    )
+    return 0
+
+
+def _handle_uninstall(args: argparse.Namespace) -> int:
+    """Macro: turn Z.ai OFF — revert Codex to the OpenAI default, fully.
+
+    Delegates to :func:`uninstall_macro` (shared with the TUI). After this, a
+    bare ``codex`` starts on OpenAI, and the Moon Bridge service is gone. Does
+    NOT catch :class:`ZaiCodexHelperError` (D-11).
+    """
+    from zai_codex_helper.services.install import uninstall_macro
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.default()
+    uninstall_macro(
+        paths,
+        apply_pipeline=_apply_provider_pipeline,
+        dry_run=getattr(args, "dry_run", False),
+    )
+    return 0
 
 
 def _handle_doctor(args: argparse.Namespace) -> int:
@@ -598,21 +642,70 @@ def _handle_doctor(args: argparse.Namespace) -> int:
         ``0`` if no check failed; ``1`` if any check failed. WARNs do NOT
         fail doctor.
     """
-    from zai_codex_helper.services.doctor import run_doctor
+    from zai_codex_helper.services.doctor import run_doctor, run_with_spinner
     from zai_codex_helper.services.paths import Paths
 
     paths = Paths.default()
-    return run_doctor(paths)
+    # The POST probe is slow (3–20s upstream); run it in a background thread
+    # with a spinner, abortable via Ctrl-C (SIGINT) — the standard interrupt
+    # for a non-interactive CLI command (no cbreak/Esc here).
+    import signal
+
+    aborted = {"yes": False}
+    prev_int = signal.getsignal(signal.SIGINT)
+
+    def _on_sigint(_signum, _frame):
+        aborted["yes"] = True
+
+    def _cli_post_runner(call):
+        signal.signal(signal.SIGINT, _on_sigint)
+        try:
+            return run_with_spinner(call, should_abort=lambda: aborted["yes"])
+        finally:
+            signal.signal(signal.SIGINT, prev_int)
+
+    return run_doctor(paths, post_check_runner=_cli_post_runner)
+
+
+def _handle_tui(args: argparse.Namespace) -> int:
+    """Open the interactive arrow-key menu — the bare ``zai-codex-helper`` default.
+
+    This is the root parser's default ``func`` (no subcommand), so a bare
+    ``zai-codex-helper`` invocation lands here. A thin shell like every other
+    handler: it delegates to :func:`zai_codex_helper.cli.tui.run`, which owns
+    its own event loop and catches :class:`ZaiCodexHelperError` per-action (so
+    a failed Install / Uninstall / Doctor returns to the menu instead of
+    exiting). The ``--dry-run`` flag is forwarded so ``Install`` previews
+    instead of writing (mirrors the ``install-service --dry-run`` path).
+    """
+    from zai_codex_helper.cli import tui
+
+    return tui.run(args)
+
+
+def _handle_set_key(args: argparse.Namespace) -> int:
+    """Replace the Z.ai API key in ``moonbridge-zai.yml`` (``set-key``).
+
+    A thin shell like every other handler: resolve ``Paths.default()``,
+    delegate to :func:`zai_codex_helper.services.api_key.set_key`, return the
+    int. Forwards ``--dry-run`` so the change previews as a redacted diff and
+    writes nothing. Does NOT catch :class:`ZaiCodexHelperError` (D-11 — owned
+    by :func:`main`), does NOT call ``sys.exit``.
+    """
+    from zai_codex_helper.services.api_key import set_key
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.default()
+    return set_key(paths, dry_run=getattr(args, "dry_run", False))
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the root ``zai-codex-helper`` argparse parser.
 
     The root parser owns the global flags (``--debug`` / ``--yes`` /
-    ``--dry-run``) and the subcommand dispatch table. Subparsers use
-    ``dest="cmd", required=True`` so invoking the CLI with no subcommand
-    produces argparse's clean error + exit 2 instead of an
-    ``AttributeError`` on ``args.func`` (RESEARCH Pitfall 4).
+    ``--dry-run``) and the subcommand dispatch table. Invoking the CLI with NO
+    subcommand opens the interactive TUI (the root's default ``func``); every
+    subcommand overrides it via its own ``set_defaults``.
     """
     # Global flags (B-2 fix): work BOTH before AND after the subcommand.
     # Root copy has normal False defaults; subparser copy uses SUPPRESS so
@@ -642,20 +735,44 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Subparser copy with SUPPRESS defaults (post-subcommand flags).
     sub_flags = argparse.ArgumentParser(add_help=False)
-    sub_flags.add_argument("--debug", action="store_true", default=argparse.SUPPRESS, help="show full traceback on error")
-    sub_flags.add_argument("--yes", "-y", action="store_true", default=argparse.SUPPRESS, help="answer yes to all prompts")
-    sub_flags.add_argument("--no-input", action="store_true", default=argparse.SUPPRESS, help="non-interactive")
-    sub_flags.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS, help="preview without writing")
+    sub_flags.add_argument(
+        "--debug",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="show full traceback on error",
+    )
+    sub_flags.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="answer yes to all prompts",
+    )
+    sub_flags.add_argument(
+        "--no-input",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="non-interactive",
+    )
+    sub_flags.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="preview without writing",
+    )
 
     parser = argparse.ArgumentParser(
         prog="zai-codex-helper",
         description="Manage the Codex ⇄ Moon Bridge ⇄ Z.ai link.",
         parents=[sub_flags],
     )
+    # No subcommand → open the interactive TUI (the bare ``zai-codex-helper``
+    # invocation). Every subcommand overrides this via its own set_defaults.
+    parser.set_defaults(func=_handle_tui)
 
     subparsers = parser.add_subparsers(
         dest="cmd",
-        required=True,
+        required=False,
         metavar="<command>",
     )
 
@@ -704,6 +821,30 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[sub_flags],
     )
     p_setup.set_defaults(func=_handle_setup)
+
+    # `install` / `uninstall` — macros: turn Z.ai ON/OFF end-to-end (Core Value
+    # in one command). install = setup + apply_zai + install_service; uninstall
+    # = apply_openai + uninstall_service + rm yml.
+    p_install = subparsers.add_parser(
+        "install",
+        help="turn Z.ai ON end-to-end (setup + config + Moon Bridge)",
+        parents=[sub_flags],
+    )
+    p_install.set_defaults(func=_handle_install)
+    p_uninstall = subparsers.add_parser(
+        "uninstall",
+        help="turn Z.ai OFF (revert config + stop Moon Bridge + rm yml)",
+        parents=[sub_flags],
+    )
+    p_uninstall.set_defaults(func=_handle_uninstall)
+
+    # `set-key` — replace only the Z.ai API key in moonbridge-zai.yml.
+    p_setkey = subparsers.add_parser(
+        "set-key",
+        help="replace the Z.ai API key in moonbridge-zai.yml",
+        parents=[sub_flags],
+    )
+    p_setkey.set_defaults(func=_handle_set_key)
 
     # `install-service` / `uninstall-service` (Phase 13, D-83..D-88; SERV-01..04).
     p_install = subparsers.add_parser(
