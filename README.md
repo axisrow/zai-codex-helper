@@ -67,10 +67,9 @@ Global flags are accepted **both before and after** the subcommand:
 - `--debug` — print a full traceback instead of the one-line `error: <msg>`.
 - `--yes` / `--no-input` — headless mode for the interactive flows (`setup`,
   `install`): take the provider default and the key from `ZAI_API_KEY`, and
-  treat the shell-helper and LaunchAgent prompts as consented. (One edge case
-  isn't auto-answered: if an existing `moonbridge-zai.yml` has a foreign
-  `server.auth_token`, you're still asked before it's rewritten.) Only `setup`
-  and `install` read these flags; every other command ignores them.
+  auto-consent to every prompt (shell helpers, the LaunchAgent, and dropping a
+  foreign `server.auth_token`). Only `setup` and `install` read these flags;
+  every other command ignores them.
 
 `install` and `install-service` are **convergent**: a repeat run on a healthy,
 already-installed setup does nothing (it won't bounce a running Moon Bridge).
