@@ -201,6 +201,38 @@ def test_run_setup_real_run_emits_restart_warning(tmp_path, monkeypatch, capsys)
 
 
 @pytest.mark.unit
+def test_install_macro_dry_run_no_env_key_previews_not_raises(
+    tmp_path, monkeypatch, capsys
+):
+    """Codex F2 regression: TUI Install --dry-run with NO ZAI_API_KEY previews, not errors.
+
+    The real path is install_macro(dry_run=True, headless=True) → run_setup(yes=True).
+    Before the fix, run_setup's STEP 2 raised 'ZAI_API_KEY env not set' BEFORE any
+    dry-run preview when the env var was absent — so the TUI Install --dry-run
+    (the exact no-env case #11 improves) errored instead of showing a diff. The
+    unit tests above missed this because they mock install_macro; this one drives
+    the real run_setup with a fresh empty env.
+    """
+    from unittest import mock
+
+    _precreate_binary(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+
+    # install_service (last step) gates on darwin; dry_run makes it summary-only.
+    with mock.patch("zai_codex_helper.services.lifecycle.sys.platform", "darwin"):
+        # Must NOT raise ZaiCodexHelperError — the whole point of the fix.
+        install.install_macro(paths, dry_run=True, headless=True)
+
+    out = capsys.readouterr().out
+    assert "moonbridge-zai.yml" in out  # yml preview rendered (STEP 3)
+    # The dry-run placeholder key must be redacted, never surfaced verbatim.
+    assert "00000000000000000000000000000000.0000000000000000" not in out
+    # A dry-run writes nothing: the real yml/config were not created.
+    assert not paths.moonbridge_yml.exists()
+
+
+@pytest.mark.unit
 def test_parser_reexports_both_render_helpers():
     """C4 regression: both moved renderers still resolve under their parser names."""
     from zai_codex_helper.cli.parser import (

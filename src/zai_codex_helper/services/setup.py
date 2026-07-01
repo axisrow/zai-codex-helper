@@ -116,6 +116,12 @@ _VALID_PROVIDERS = ("zai", "openai")
 #: malformed key never reaches ``moonbridge-zai.yml``.
 _ZAI_KEY_RE = re.compile(r"^[0-9a-f]{32}\.[A-Za-z0-9]{16}$")
 
+#: A format-valid but obviously-fake key used ONLY on the dry-run path when no
+#: real key is available. A dry-run writes nothing and the yml preview redacts
+#: the value (fingerprint), so no real secret is needed to render the diff. All
+#: zeros makes it unmistakably a placeholder if it ever surfaced.
+_DRY_RUN_PLACEHOLDER_KEY = "00000000000000000000000000000000.0000000000000000"
+
 
 def validate_api_key(key: str) -> None:
     """Raise :class:`ZaiCodexHelperError` unless ``key`` matches the Z.ai format.
@@ -246,6 +252,14 @@ def run_setup(
         # Env wins (preferred for automation). Validate it — a malformed env
         # key is a config bug, fail fast with an actionable message.
         validate_api_key(api_key)
+    elif dry_run:
+        # A dry-run writes NOTHING: STEP 3 renders a REDACTED yml preview
+        # (preview_yml_change fingerprints the key value) and STEP 6 never
+        # touches the key. So a real secret is not needed to preview — use a
+        # format-valid placeholder instead of demanding one / raising. This lets
+        # `setup --yes --dry-run` and TUI Install --dry-run preview with no env
+        # key set (the case #11 is about), without ever prompting for a secret.
+        api_key = _DRY_RUN_PLACEHOLDER_KEY
     elif yes:
         # D-79: headless + no env → there is no stdin to fall back to. Raise
         # an actionable error naming the env var; let it propagate to main().
