@@ -359,7 +359,11 @@ def test_setup_wires_models_cache_step(tmp_path, monkeypatch):
     _import_service()  # lazy-import check (side-effect only)
     # Pre-create the Moon Bridge binary so build_moonbridge's idempotency skip
     # fires before any subprocess (mirrors tests/test_setup.py::_precreate_binary).
-    binary = tmp_path / ".codex" / "moon-bridge"
+    # Path MUST match paths.moonbridge_binary (~/.codex/bin/moonbridge) — the
+    # binary moved there in b3bc30c; the old ~/.codex/moon-bridge path would miss
+    # the skip and force a real `go build`, which fails in CI (no Go toolchain).
+    binary = tmp_path / ".codex" / "bin" / "moonbridge"
+    binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(b"#!/bin/sh\nexit 0\n")
     os.chmod(binary, 0o755)
     assert binary.stat().st_mode & stat.S_IXUSR
@@ -402,7 +406,9 @@ def test_setup_dry_run_models_cache_no_mutation_with_diff(tmp_path, monkeypatch)
     import stat
 
     # Pre-create the Moon Bridge binary (dry-run skips build, but keep parity).
-    binary = tmp_path / ".codex" / "moon-bridge"
+    # Path MUST match paths.moonbridge_binary (~/.codex/bin/moonbridge).
+    binary = tmp_path / ".codex" / "bin" / "moonbridge"
+    binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(b"#!/bin/sh\nexit 0\n")
     os.chmod(binary, 0o755)
     assert binary.stat().st_mode & stat.S_IXUSR

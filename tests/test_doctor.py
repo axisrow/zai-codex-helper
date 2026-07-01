@@ -790,13 +790,26 @@ def test_doctor_check_auth_token_none_for_canonical_yml(tmp_path):
 
 
 @pytest.mark.unit
-def test_post_check_runner_abort_returns_warn(tmp_path, monkeypatch, capsys):
+def test_post_check_runner_abort_returns_warn(
+    tmp_path, monkeypatch, httpserver, capsys
+):
     """When post_check_runner returns None (aborted), POST → warn 'interrupted'.
 
     doctor exit 0 (WARN doesn't fail), the rendered line names the interrupt.
+
+    The HTTP/port probes MUST be isolated (mocked port + httpserver-redirected
+    GET) — otherwise the GET /v1/models and port checks hit the real
+    127.0.0.1:38440 and FAIL wherever no Moon Bridge is listening (e.g. CI),
+    making doctor exit 1 for reasons unrelated to the abort under test. Without
+    this, the test only passes on a box that happens to be running Moon Bridge.
     """
     _seed_full_pass_state(tmp_path)
     paths = Paths.from_home(tmp_path)
+    _patch_port(monkeypatch, connects=True)
+    _redirect_to_httpserver(monkeypatch, httpserver)
+    httpserver.expect_request("/v1/models", method="GET").respond_with_data(
+        '{"data": []}', status=200, content_type="application/json"
+    )
     runner, _ = _recording_runner(
         responses=[
             ("launchctl", _ok(["launchctl"], stdout="pid=1\n")),
@@ -807,7 +820,13 @@ def test_post_check_runner_abort_returns_warn(tmp_path, monkeypatch, capsys):
     def _aborting_runner(_call):
         return None  # simulate Esc/Ctrl-C abort
 
-    rc = run_doctor(paths, runner=runner, post_check_runner=_aborting_runner)
+    with _client_for(httpserver) as client:
+        rc = run_doctor(
+            paths,
+            http_client=client,
+            runner=runner,
+            post_check_runner=_aborting_runner,
+        )
     out = capsys.readouterr().out
     assert rc == 0  # WARN, not FAIL
     assert "interrupted" in out
