@@ -95,11 +95,10 @@ def _pause() -> None:
     wipe Doctor's output before the user sees it.
     """
     print("\n[press any key]")
-    try:
-        _read_key()
-    except EOFError:
-        # ponytail: stdin closed mid-pause (e.g. broken pipe) — just return.
-        pass
+    # _read_key uses sys.stdin.read(1), which returns "" at EOF (never raises
+    # EOFError), so a closed stdin just falls through and returns — no guard
+    # needed.
+    _read_key()
 
 
 def _state(paths) -> tuple[bool, bool, str]:

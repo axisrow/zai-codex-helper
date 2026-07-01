@@ -326,3 +326,50 @@ def test_use_openai_dry_run_prints_revert_diff_and_writes_nothing(tmp_path, caps
     assert "---" in combined and "+++" in combined
     # The revert surfaces the OpenAI model on an added line.
     assert "gpt-5.5" in combined
+
+
+@pytest.mark.unit
+def test_preview_yml_change_seals_foreign_secret_encodings(tmp_path):
+    """T-15-01: node-level redaction seals block-scalar, quoted, and auth_token secrets.
+
+    A foreign / hand-edited moonbridge-zai.yml may encode the key as a block
+    scalar (`api_key: |` + indented continuation), a quoted key (`"api_key":`),
+    or carry a `server.auth_token`. A LINE regex cannot redact these — the
+    continuation/quoted/token values survive to the removed side of the diff.
+    preview_yml_change redacts at the NODE level (safe_load → fingerprint secret
+    values → safe_dump), so NONE of the real values can reach stdout, while a
+    genuine key CHANGE still shows as a `<redacted:...>` diff line.
+    """
+    from zai_codex_helper.services.diff_preview import preview_yml_change
+
+    foreign = (
+        "mode: Transform\n"
+        "server:\n"
+        "  addr: 127.0.0.1:38440\n"
+        "  auth_token: SUPERSECRETLOOPBACKTOKEN\n"
+        "providers:\n"
+        "  zai:\n"
+        "    api_key: |\n"
+        "      SECRETBLOCKSCALARKEYLEAK\n"
+        "      SECONDLINE\n"
+        "  other:\n"
+        '    "api_key": QUOTEDKEYLEAK\n'
+    )
+    yml = tmp_path / "moonbridge-zai.yml"
+    yml.write_text(foreign, encoding="utf-8")
+
+    body = {"providers": {"zai": {"api_key": "BRANDNEWKEY9999"}}}
+    lines: list[str] = []
+    preview_yml_change(yml, body, lines.append)
+    out = "\n".join(lines)
+
+    for secret in (
+        "SUPERSECRETLOOPBACKTOKEN",  # auth_token
+        "SECRETBLOCKSCALARKEYLEAK",  # block scalar line 1
+        "SECONDLINE",  # block scalar continuation
+        "QUOTEDKEYLEAK",  # quoted key
+        "BRANDNEWKEY9999",  # the new target key
+    ):
+        assert secret not in out, f"secret leaked to stdout: {secret}\n{out}"
+    # The key change is still visible as a fingerprint diff line.
+    assert "<redacted:" in out

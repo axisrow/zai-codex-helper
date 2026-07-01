@@ -60,7 +60,7 @@ _REDACTED_PLACEHOLDER = "<redacted>"
 #: the nested ``    api_key: <value>`` under providers). Anchored on ``:`` so a
 #: comment/docstring that merely MENTIONS the name is NOT touched.
 _ZAI_API_KEY_LINE_RE = re.compile(
-    r"^(\s*(?:ZAI_API_KEY|.*api_key):).*$",
+    r"^(\s*(?:ZAI_API_KEY|auth_token|.*api_key):).*$",
     re.MULTILINE,
 )
 
@@ -182,25 +182,65 @@ def redact_secrets(text: str) -> str:
     )
 
 
-def _redact_key_lines(text: str) -> str:
-    """Redact secret lines to a non-reversible per-value fingerprint (T-15-01).
+#: Mapping keys whose VALUE is a secret and must be fingerprint-redacted before
+#: a dry-run diff is printed. ``api_key`` matches the nested
+#: ``providers.<name>.api_key``; ``ZAI_API_KEY`` is the legacy top-level form;
+#: ``auth_token`` is Moon Bridge's loopback token (a foreign yml may carry it).
+_SECRET_KEYS = frozenset({"api_key", "zai_api_key", "auth_token"})
 
-    Like :func:`redact_secrets` but replaces the value with
-    ``<redacted:XXXXXXXX>`` where ``XXXXXXXX`` is the first 8 hex chars of the
-    value's sha256. Used ONLY for the both-sides dry-run diff: a genuine key
-    change stays visible (different fingerprints → a diff line) while the real
-    value never reaches stdout. The fingerprint is non-reversible; 32 bits is
-    ample to distinguish two keys in a preview (not a security boundary — the
-    value is already gone). Identical keys → identical fingerprint → the line
-    drops out of the diff (correct: nothing changed).
+
+def _fingerprint(value: object) -> str:
+    """Non-reversible ``<redacted:XXXXXXXX>`` fingerprint (first 8 hex of sha256).
+
+    A genuine key CHANGE stays visible (different fingerprints → a diff line)
+    while the real value never reaches stdout. 32 bits is ample to distinguish
+    two keys in a preview; it is not a security boundary (the value is gone).
     """
+    digest = hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:8]
+    return f"{_REDACTED_PLACEHOLDER[:-1]}:{digest}>"
 
-    def _sub(m: re.Match) -> str:
-        value = m.group(0)[len(m.group(1)) :].strip()
-        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
-        return f"{m.group(1)} {_REDACTED_PLACEHOLDER[:-1]}:{digest}>"
 
-    return _ZAI_API_KEY_LINE_RE.sub(_sub, text)
+def _redact_secret_nodes(data: object) -> object:
+    """Recursively replace secret VALUES with a fingerprint at the NODE level (T-15-01).
+
+    Node-level (not line-level) is load-bearing: a line regex cannot redact a
+    multi-line YAML scalar (a block ``api_key: |`` or a quoted value that
+    ``safe_dump`` wraps across lines) — the continuation lines carry the raw
+    secret. Redacting the parsed VALUE before ``safe_dump`` guarantees the
+    serialized form is a single ``<redacted:...>`` scalar regardless of how the
+    source encoded it. Returns a redacted deep copy; the input is not mutated.
+    """
+    if isinstance(data, dict):
+        return {
+            k: (
+                _fingerprint(v)
+                if isinstance(k, str) and k.lower() in _SECRET_KEYS
+                else _redact_secret_nodes(v)
+            )
+            for k, v in data.items()
+        }
+    if isinstance(data, list):
+        return [_redact_secret_nodes(item) for item in data]
+    return data
+
+
+def _redact_yaml(text: str) -> str:
+    """Parse ``text`` as YAML, fingerprint every secret node, re-serialize.
+
+    Collapses any foreign encoding (block scalar, quoted key, multi-line value)
+    to canonical inline YAML with the secret already replaced — so no raw secret
+    can survive to the diff. Empty text → empty (nothing to redact).
+    """
+    if not text:
+        return ""
+    loaded = yaml.safe_load(text)
+    redacted = _redact_secret_nodes(loaded)
+    return yaml.safe_dump(
+        redacted,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )
 
 
 def preview_yml_change(
@@ -218,21 +258,22 @@ def preview_yml_change(
     the on-disk file via :func:`compute_diff`, and prints it. The key value
     NEVER reaches stdout.
     """
-    serialized = yaml.safe_dump(
-        body,
-        sort_keys=False,
-        default_flow_style=False,
-        allow_unicode=True,
-    )
-    # Redact BOTH sides before diffing (T-15-01 / SECR-03). compute_diff reads
-    # the CURRENT on-disk yml raw, so redacting only the target would still emit
-    # the removed `api_key:` line carrying the user's EXISTING real secret. We
-    # redact the current file's key too and diff redacted-vs-redacted so neither
-    # the old nor the new key value ever reaches stdout. The redaction is a short
-    # non-reversible sha256 fingerprint (not the flat `<redacted>`), so a genuine
-    # key CHANGE still surfaces as a diff line (`<redacted:ab12cd34>` →
+    # Redact BOTH sides at the NODE level before diffing (T-15-01 / SECR-03).
+    # The diff shows the CURRENT on-disk yml against the would-be write, so a
+    # removed `api_key:`/`auth_token:` line would otherwise carry the user's
+    # EXISTING real secret. _redact_yaml parses each side, fingerprints every
+    # secret VALUE, and re-serializes — so neither the old nor the new value
+    # (nor a foreign block-scalar / quoted / multi-line encoding of it) can
+    # reach stdout. The fingerprint is a non-reversible sha256 prefix, so a
+    # genuine key CHANGE still surfaces as a diff line (`<redacted:ab12cd34>` →
     # `<redacted:99ff00aa>`) instead of collapsing to a misleading "(no changes)".
+    # No new crash path: both callers already safe_load the current file before
+    # preview, so a malformed yml has already raised upstream.
+    redacted_target = _redact_yaml(
+        yaml.safe_dump(
+            body, sort_keys=False, default_flow_style=False, allow_unicode=True
+        )
+    )
     current = path.read_text(encoding="utf-8") if path.exists() else ""
-    redacted_target = _redact_key_lines(serialized)
-    redacted_current = _redact_key_lines(current)
+    redacted_current = _redact_yaml(current)
     print_fn(_diff_texts(path, redacted_current, redacted_target))
