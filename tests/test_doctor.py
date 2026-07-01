@@ -76,19 +76,19 @@ def _recording_runner(responses=None):
 
 
 def _patch_port(monkeypatch, *, connects):
-    """Patch ``doctor.socket.create_connection`` for the port-probe ONLY.
+    """Patch ``lifecycle.socket.create_connection`` for the port-probe ONLY.
 
-    The port-open check (check 3) calls
-    ``socket.create_connection(("127.0.0.1", 38440), timeout=...)``. This fake
-    intercepts ONLY that address pair (host ``127.0.0.1``, port ``38440``) and
-    returns a deterministic result; every other address (e.g. the real
-    pytest-httpserver socket the HTTP probes connect to) falls through to the
-    REAL :func:`socket.create_connection` so the HTTP roundtrip works.
+    doctor's check 3 now delegates to ``lifecycle.port_open`` (shared probe), so
+    the socket seam lives in ``lifecycle``. This fake intercepts ONLY the
+    ``127.0.0.1:38440`` pair and returns a deterministic result; every other
+    address (e.g. the real pytest-httpserver socket the HTTP probes connect to)
+    falls through to the REAL :func:`socket.create_connection`.
 
     ``connects=True`` → returns a dummy socket whose ``close`` is a no-op.
     ``connects=False`` → raises ``ConnectionRefusedError`` (an OSError), the
     same shape a real probe sees when nothing listens on 38440.
     """
+    from zai_codex_helper.services import lifecycle
 
     class _FakeSock:
         def close(self):
@@ -105,20 +105,20 @@ def _patch_port(monkeypatch, *, connects):
         # Any other address (the pytest-httpserver socket) → real connection.
         return real_create_connection(addr_pair, timeout=timeout, **kwargs)
 
-    monkeypatch.setattr(doctor.socket, "create_connection", fake_create_connection)
+    monkeypatch.setattr(lifecycle.socket, "create_connection", fake_create_connection)
 
 
 def _redirect_to_httpserver(monkeypatch, httpserver):
     """Patch doctor's Moon Bridge host/port to point at the pytest-httpserver.
 
     doctor's production code builds ABSOLUTE URLs
-    (``http://127.0.0.1:38440/v1/models``); patching ``_MOONBRIDGE_HOST`` and
-    ``_MOONBRIDGE_PORT`` redirects those URLs at the in-process httpserver so
-    no real network is needed. Returns the host/port tuple the client should
-    use (mirrored for clarity).
+    (``http://127.0.0.1:38440/v1/models``) from the ``MOONBRIDGE_HOST`` /
+    ``MOONBRIDGE_PORT`` names imported into the ``doctor`` module; patching them
+    there redirects those URLs at the in-process httpserver so no real network is
+    needed. Returns the host/port tuple the client should use.
     """
-    monkeypatch.setattr(doctor, "_MOONBRIDGE_HOST", httpserver.host)
-    monkeypatch.setattr(doctor, "_MOONBRIDGE_PORT", httpserver.port)
+    monkeypatch.setattr(doctor, "MOONBRIDGE_HOST", httpserver.host)
+    monkeypatch.setattr(doctor, "MOONBRIDGE_PORT", httpserver.port)
     return httpserver.host, httpserver.port
 
 

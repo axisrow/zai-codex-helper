@@ -68,7 +68,6 @@ so NO real ``launchctl`` / ``pgrep`` / network ever runs (threat T-14-02).
 from __future__ import annotations
 
 import os
-import socket
 import stat
 import subprocess
 import sys
@@ -83,9 +82,13 @@ from zai_codex_helper.backends.json_backend import JsonBackend
 from zai_codex_helper.backends.toml import TomlBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.services.deps import detect_moonbridge_binary
-from zai_codex_helper.services.lifecycle import verify_service_loaded
+from zai_codex_helper.services.lifecycle import port_open, verify_service_loaded
 from zai_codex_helper.services.paths import Paths
-from zai_codex_helper.services.providers import ZAI_MODEL
+from zai_codex_helper.services.providers import (
+    MOONBRIDGE_HOST,
+    MOONBRIDGE_PORT,
+    ZAI_MODEL,
+)
 from zai_codex_helper.services.status import detect_provider, read_for_status
 
 __all__ = ["CheckResult", "run_doctor", "render_check"]
@@ -95,14 +98,6 @@ __all__ = ["CheckResult", "run_doctor", "render_check"]
 #: text=True)`` and returns a :class:`subprocess.CompletedProcess`.
 Runner = Callable[..., subprocess.CompletedProcess]
 
-#: The port Moon Bridge listens on (CLAUDE.md "Moon Bridge": 127.0.0.1:38440).
-#: Imported from lifecycle.py's contract — single source of truth.
-_MOONBRIDGE_HOST = "127.0.0.1"
-_MOONBRIDGE_PORT = 38440
-
-#: Short timeout for the port-open TCP probe (check 3). Mirrors lifecycle.py's
-#: ``_PORT_PROBE_TIMEOUT`` — the probe must fail fast rather than hang doctor.
-_PORT_PROBE_TIMEOUT = 3.0
 
 #: GRANULAR httpx timeouts for BOTH probes (D-90, DIAG-02). A single float
 #: would apply one ceiling to connect+read+write+pool; the Z.ai Responses-API
@@ -141,10 +136,10 @@ _ANSI_YELLOW = "\033[33m"
 _ANSI_RED = "\033[31m"
 _ANSI_RESET = "\033[0m"
 
-#: Plain (no-color) markers — emitted when stdout is not a TTY (D-92).
-_MARKERS_PLAIN = {"pass": "[OK]", "warn": "[!]", "fail": "[X]"}
-#: Colored markers — ANSI-wrapped glyphs.
-_MARKERS_COLOR = {"pass": "[OK]", "warn": "[!]", "fail": "[X]"}
+#: The ASCII-safe marker glyphs (readable when piped). The plain-vs-color
+#: distinction is expressed by ANSI wrapping in :func:`_marker`, not by two
+#: dicts — the glyphs themselves are identical.
+_MARKERS = {"pass": "[OK]", "warn": "[!]", "fail": "[X]"}
 
 
 def _marker(verdict: str, *, color: bool) -> str:
@@ -154,7 +149,7 @@ def _marker(verdict: str, *, color: bool) -> str:
     color code; otherwise it is plain ASCII. The glyph set (``[OK]``/``[!]``/
     ``[X]``) is ASCII-safe so the rendered line is readable when piped.
     """
-    glyph = _MARKERS_COLOR[verdict]
+    glyph = _MARKERS[verdict]
     if not color:
         return glyph
     if verdict == "pass":
@@ -284,13 +279,10 @@ def _check_port_open() -> CheckResult:
     is listening; it says nothing about auth/upstream. A later probe may still
     fail, which is the precise port-open-but-auth-wrong diagnosis.
     """
+    # The probe uses lifecycle.port_open's own (canonical loopback) defaults;
+    # the display name is that fixed address.
     name = "Port 127.0.0.1:38440"
-    try:
-        sock = socket.create_connection(
-            (_MOONBRIDGE_HOST, _MOONBRIDGE_PORT),
-            timeout=_PORT_PROBE_TIMEOUT,
-        )
-    except OSError:
+    if not port_open():
         return CheckResult(
             name=name,
             verdict="fail",
@@ -300,7 +292,6 @@ def _check_port_open() -> CheckResult:
                 "`zai-codex-helper install-service` (or check its logs)"
             ),
         )
-    sock.close()
     return CheckResult(
         name=name,
         verdict="pass",
@@ -347,12 +338,17 @@ def _check_auth_token(paths: Paths) -> CheckResult | None:
     )
 
 
-def _check_get_models(client: httpx.Client, headers: dict | None = None) -> CheckResult:
-    """Check 4: ``GET /v1/models`` returns 2xx (httpx, hard timeout — D-90)."""
+def _check_get_models(client: httpx.Client) -> CheckResult:
+    """Check 4: ``GET /v1/models`` returns 2xx (httpx, hard timeout — D-90).
+
+    Probes UNAUTHENTICATED, exactly as Codex reaches loopback Moon Bridge — a
+    present ``server.auth_token`` is reported by :func:`_check_auth_token`, not
+    silently sent here (that would mask the real Codex 401 path).
+    """
     name = "GET /v1/models"
-    url = f"http://{_MOONBRIDGE_HOST}:{_MOONBRIDGE_PORT}/v1/models"
+    url = f"http://{MOONBRIDGE_HOST}:{MOONBRIDGE_PORT}/v1/models"
     try:
-        resp = client.get(url, headers=headers)
+        resp = client.get(url)
     except Exception as e:  # noqa: BLE001 — doctor reports, never raises.
         return CheckResult(
             name=name,
@@ -375,9 +371,7 @@ def _check_get_models(client: httpx.Client, headers: dict | None = None) -> Chec
     )
 
 
-def _check_post_responses(
-    client: httpx.Client, headers: dict | None = None
-) -> CheckResult:
+def _check_post_responses(client: httpx.Client) -> CheckResult:
     """Check 5: ``POST /v1/responses`` (glm-5.2) returns 2xx (D-90).
 
     Sends a MINIMAL payload naming :data:`ZAI_MODEL` to the LOCAL Moon Bridge
@@ -386,7 +380,7 @@ def _check_post_responses(
     prove the Responses-API path + upstream Z.ai auth work.
     """
     name = "POST /v1/responses"
-    url = f"http://{_MOONBRIDGE_HOST}:{_MOONBRIDGE_PORT}/v1/responses"
+    url = f"http://{MOONBRIDGE_HOST}:{MOONBRIDGE_PORT}/v1/responses"
     # Minimal Responses-API-shaped payload naming the Z.ai model. Moon Bridge
     # converts Responses → Chat for upstream. We only care that a 2xx comes
     # back; we do NOT stream or parse the body.
@@ -401,7 +395,7 @@ def _check_post_responses(
         "max_output_tokens": 1,
     }
     try:
-        resp = client.post(url, json=payload, headers=headers)
+        resp = client.post(url, json=payload)
     except Exception as e:  # noqa: BLE001 — doctor reports, never raises.
         return CheckResult(
             name=name,

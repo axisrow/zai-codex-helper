@@ -59,7 +59,7 @@ import json
 from zai_codex_helper.backends.base import ConfigBackend
 from zai_codex_helper.services.paths import Paths
 
-__all__ = ["JsonBackend", "deep_merge", "merge_model_list"]
+__all__ = ["JsonBackend", "deep_merge", "merge_model_list", "merged_cache_text"]
 
 #: The object key in ``models_cache.json`` whose value is a LIST of model entries
 #: (the SPIKE deliverable, D-98 / SC-4). The real ``~/.codex/models_cache.json``
@@ -235,6 +235,32 @@ def deep_merge(base: dict, override: dict) -> dict:
     return merged
 
 
+def merged_cache_text(current: dict, content: dict) -> str:
+    """The canonical models_cache JSON text after merging ``content`` over ``current``.
+
+    The SINGLE merge recipe shared by :meth:`JsonBackend.write_canonical` (which
+    writes the result) and the ``setup --dry-run`` preview (which only renders
+    it) — so the preview can never diverge from the real write. Deep-merges,
+    then applies the surgical ``models`` list-aware override (replace-by-slug,
+    never clobber the user's entries), then serializes with the canonical
+    ``json.dumps(indent=2)``.
+    """
+    merged = deep_merge(current, content)
+    # SC-4 / D-98: the `models` key is a LIST keyed by `slug`. deep_merge would
+    # overwrite it wholesale (clobbering the user's entries); merge_model_list
+    # replaces-by-slug + appends new. Fires ONLY when both sides have a list.
+    if (
+        _MODELS_KEY in current
+        and _MODELS_KEY in content
+        and isinstance(current[_MODELS_KEY], list)
+        and isinstance(content[_MODELS_KEY], list)
+    ):
+        merged[_MODELS_KEY] = merge_model_list(
+            current[_MODELS_KEY], content[_MODELS_KEY]
+        )
+    return json.dumps(merged, indent=2)
+
+
 class JsonBackend(ConfigBackend):
     """Concrete :class:`ConfigBackend` for ``~/.codex/models_cache.json`` (D-58).
 
@@ -355,21 +381,5 @@ class JsonBackend(ConfigBackend):
                 f"got {type(content).__name__}"
             )
 
-        current = self.read()
-        merged = deep_merge(current, content)
-        # SC-4 / D-98 (Phase 15): the `models` key is a LIST keyed by `slug`.
-        # deep_merge would overwrite it wholesale (clobbering the user's entries);
-        # merge_model_list replaces-by-slug and appends new slugs instead. This
-        # surgical override fires ONLY when both sides have a list at `_MODELS_KEY`
-        # — every other key keeps deep_merge's contract.
-        if (
-            _MODELS_KEY in current
-            and _MODELS_KEY in content
-            and isinstance(current[_MODELS_KEY], list)
-            and isinstance(content[_MODELS_KEY], list)
-        ):
-            merged[_MODELS_KEY] = merge_model_list(
-                current[_MODELS_KEY], content[_MODELS_KEY]
-            )
-        serialized = json.dumps(merged, indent=2)
+        serialized = merged_cache_text(self.read(), content)
         self._write_via_atomic(serialized, mode)

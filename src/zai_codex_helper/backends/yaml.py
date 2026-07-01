@@ -84,6 +84,16 @@ class YamlBackend(ConfigBackend):
         """
         super().__init__(paths, "moonbridge_yml")
 
+    @property
+    def backup_mode(self) -> int | None:
+        """The ``.bak`` must be ``0o600`` — it holds the same key as the live yml.
+
+        Declaring the secret mode here (matching ``write_canonical``'s ``0o600``
+        default) is what lets :class:`BackupCoordinator` restrict the ``.bak``
+        WITHOUT re-deriving secret-ness by comparing paths (SECR-02).
+        """
+        return 0o600
+
     def read(self) -> Any:
         """Parse ``moonbridge-zai.yml`` via ``yaml.safe_load`` (D-56, D-61).
 

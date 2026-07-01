@@ -82,6 +82,9 @@ from zai_codex_helper.services.models_cache import (
 from zai_codex_helper.services.moonbridge import build_moonbridge
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.providers import (
+    MOONBRIDGE_HOST,
+    MOONBRIDGE_PORT,
+    ZAI_MODEL,
     apply_openai,
     apply_zai,
     check_postconditions,
@@ -100,15 +103,6 @@ def canonical_moonbridge_yml(api_key: str) -> dict:
     return _canonical_moonbridge_yml(api_key)
 
 
-# The canonical Moon Bridge upstream model (PROV-03; the same model
-# apply_zai writes to config.toml, kept here so the YAML body and the TOML
-# transform agree on a single literal).
-_ZAI_MODEL = "glm-5.2"
-
-#: The Moon Bridge listen address (CLAUDE.md "The Moon Bridge Question":
-#: ``127.0.0.1:38440``). Mirrors the provider block's ``base_url`` host/port.
-_MB_HOST = "127.0.0.1"
-_MB_PORT = 38440
 
 #: Z.ai (BigModel) upstream — the REAL Moon Bridge config schema (verified
 #: against ``config.example.yml`` + the user's working yml). The key lives in
@@ -132,18 +126,18 @@ def _canonical_moonbridge_yml(api_key: str) -> dict:
     """
     return {
         "mode": "Transform",
-        "server": {"addr": f"{_MB_HOST}:{_MB_PORT}"},
+        "server": {"addr": f"{MOONBRIDGE_HOST}:{MOONBRIDGE_PORT}"},
         "providers": {
             _ZAI_PROVIDER_NAME: {
                 "protocol": _ZAI_PROTOCOL,
                 "base_url": _ZAI_UPSTREAM_BASE_URL,
                 "api_key": api_key,
                 "user_agent": _ZAI_USER_AGENT,
-                "offers": [{"model": _ZAI_MODEL}],
+                "offers": [{"model": ZAI_MODEL}],
             }
         },
-        "routes": {_ZAI_MODEL: {"model": _ZAI_MODEL, "provider": _ZAI_PROVIDER_NAME}},
-        "models": {_ZAI_MODEL: {}},
+        "routes": {ZAI_MODEL: {"model": ZAI_MODEL, "provider": _ZAI_PROVIDER_NAME}},
+        "models": {ZAI_MODEL: {}},
     }
 
 
@@ -312,23 +306,22 @@ def run_setup(
     # gets 401 (it sends ZAI_API_KEY, Moon Bridge expects the auth_token). Ask
     # ONCE whether to switch to localhost-only (drop the token). No/declined →
     # leave the yml untouched + warn; Yes → backup once, then write canonical.
-    from zai_codex_helper.services.api_key import yml_has_auth_token
-
-    _AUTH_TOKEN_PROMPT = (
-        "Moon Bridge has a local auth_token set, which breaks Codex (401). "
-        "Switch Moon Bridge to localhost-only mode (remove the token)?"
+    from zai_codex_helper.services.api_key import (
+        AUTH_TOKEN_PROMPT,
+        yml_has_auth_token,
     )
+
     yml_backend = YamlBackend(paths)
     existing = yml_backend.read() if yml_backend.exists() else None
-    if yml_has_auth_token(existing) and not confirm_fn(_AUTH_TOKEN_PROMPT):
+    if yml_has_auth_token(existing) and not confirm_fn(AUTH_TOKEN_PROMPT):
         print_fn(
             "warning: Moon Bridge auth_token left in place — Codex will likely "
             "get 401. Remove `server.auth_token` to fix (loopback needs no key)."
         )
     elif dry_run:
         # D-95: preview the would-be moonbridge-zai.yml as a REDACTED diff (the
-        # key value NEVER reaches print_fn — preview_yml_change redacts via
-        # redact_secrets before compute_diff). Shared with `set-key --dry-run`.
+        # key value NEVER reaches print_fn — preview_yml_change node-level
+        # fingerprints secret values before diffing). Shared with `set-key --dry-run`.
         preview_yml_change(paths.moonbridge_yml, yml_body, print_fn)
     else:
         # Back up the original ONCE (sentinel-gated, like config.toml) before

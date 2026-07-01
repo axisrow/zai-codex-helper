@@ -73,9 +73,14 @@ from collections.abc import Callable
 # is the orphan-prevention anchor — uninstall's bootout always targets the
 # exact registration install's bootstrap created.
 from zai_codex_helper.backends.plist import LABEL as LAUNCHAGENT_LABEL
-from zai_codex_helper.backends.plist import PlistBackend, canonical_plist
+from zai_codex_helper.backends.plist import (
+    PLIST_FILENAME,
+    PlistBackend,
+    canonical_plist,
+)
 from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.paths import Paths
+from zai_codex_helper.services.providers import MOONBRIDGE_HOST, MOONBRIDGE_PORT
 
 __all__ = [
     "LAUNCHAGENT_LABEL",
@@ -124,21 +129,36 @@ _ALREADY_LOADED_PATTERNS: tuple[str, ...] = (
     "input/output error",
 )
 
-#: The port Moon Bridge listens on (CLAUDE.md "Moon Bridge": 127.0.0.1:38440).
-_MOONBRIDGE_HOST = "127.0.0.1"
-_MOONBRIDGE_PORT = 38440
+#: Moon Bridge host/port — the single source of truth lives in providers.py;
+#: aliased here so the existing local use-sites read unchanged.
+_MOONBRIDGE_HOST = MOONBRIDGE_HOST
+_MOONBRIDGE_PORT = MOONBRIDGE_PORT
 
 #: Short timeout for the post-install port probe (D-86). Moon Bridge may need a
 #: moment to boot, so the probe fails fast rather than hanging the install.
 _PORT_PROBE_TIMEOUT = 3.0
 
-#: The fixed plist filename, paired 1:1 with :data:`LAUNCHAGENT_LABEL` (D-59).
-#: Equals ``backends.plist._PLIST_FILENAME``; a drift in either is caught by the
-#: Label-identity test. This is the single place lifecycle.py constructs the
-#: filename — both :func:`install_service` (the bootstrap target) and
-#: :func:`uninstall_service` (the unlink target) resolve through
-#: :func:`_plist_path`.
-_PLIST_FILENAME = "dev.zai.moonbridge.plist"
+
+def port_open(
+    host: str = MOONBRIDGE_HOST,
+    port: int = MOONBRIDGE_PORT,
+    *,
+    timeout: float = _PORT_PROBE_TIMEOUT,
+) -> bool:
+    """Return True iff a short-timeout TCP connect to ``host:port`` succeeds.
+
+    The single Moon Bridge liveness probe, shared by the post-install verify
+    here and doctor's check 3 (they test the exact same thing). Socket over
+    httpx — lighter for a port check. Any :class:`OSError` (refused, timeout,
+    host unreachable) → not responding.
+    """
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+    except OSError:
+        return False
+    sock.close()
+    return True
+
 
 
 def _gate_darwin() -> None:
@@ -164,14 +184,13 @@ def _gate_darwin() -> None:
 def _plist_path(paths: Paths):
     """Return ``paths.launchagents_dir / dev.zai.moonbridge.plist`` (D-59, D-85).
 
-    The single place lifecycle.py constructs the plist path. Paired 1:1 with
-    :data:`LAUNCHAGENT_LABEL` and equals ``PlistBackend``'s
-    ``_PLIST_FILENAME`` (Phase 9) — a drift in either is caught by the
-    Label-identity unit test. Target is ALWAYS the per-user
-    ``~/Library/LaunchAgents/``, NEVER ``/Library/LaunchDaemons/`` (CLAUDE.md
-    "What NOT to Use"; threat T-13-03).
+    The single place lifecycle.py constructs the plist path, using the SAME
+    :data:`~backends.plist.PLIST_FILENAME` the backend imports (no re-stringed
+    copy — the constant is now shared, like ``LABEL``). Target is ALWAYS the
+    per-user ``~/Library/LaunchAgents/``, NEVER ``/Library/LaunchDaemons/``
+    (CLAUDE.md "What NOT to Use"; threat T-13-03).
     """
-    return paths.launchagents_dir / _PLIST_FILENAME
+    return paths.launchagents_dir / PLIST_FILENAME
 
 
 def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
@@ -457,21 +476,7 @@ def verify_service_loaded(
         result.returncode == 0 and "could not find service" not in combined
     )
 
-    # 2. Port probe: short-timeout TCP connect to Moon Bridge's listener
-    #    (CLAUDE.md "Moon Bridge": 127.0.0.1:38440). Socket chosen over httpx —
-    #    lighter for a port check, no dep import at module load (D-87
-    #    discretion). Any OSError (refused, timeout, host unreachable) → the
-    #    port is not responding; the caller warns.
-    port_responding = False
-    try:
-        sock = socket.create_connection(
-            (_MOONBRIDGE_HOST, _MOONBRIDGE_PORT),
-            timeout=_PORT_PROBE_TIMEOUT,
-        )
-    except OSError:
-        port_responding = False
-    else:
-        sock.close()
-        port_responding = True
+    # 2. Port probe: is Moon Bridge listening? (shared with doctor's check 3.)
+    port_responding = port_open()
 
     return launchctl_loaded, port_responding

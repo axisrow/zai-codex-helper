@@ -30,7 +30,10 @@ def _ns():
 @pytest.mark.unit
 def test_dispatch_quit_returns_true():
     """The Quit action signals the loop to exit."""
-    assert tui._dispatch("action-quit", argparse.Namespace(), _ns()) is True
+    assert (
+        tui._dispatch("action-quit", argparse.Namespace(), _ns(), (False, False, ""))
+        is True
+    )
 
 
 @pytest.mark.unit
@@ -42,7 +45,7 @@ def test_dispatch_doctor_calls_run_doctor(monkeypatch):
     monkeypatch.setattr(doctor, "run_doctor", lambda *a, **k: called.append(True) or 0)
     monkeypatch.setattr(tui, "_pause", lambda: None)
     paths = argparse.Namespace()
-    assert tui._dispatch("action-doctor", paths, _ns()) is False
+    assert tui._dispatch("action-doctor", paths, _ns(), (False, False, "")) is False
     assert called == [True]
 
 
@@ -53,15 +56,13 @@ def test_dispatch_toggle_zai_flips_provider(monkeypatch):
 
     applied = []
     monkeypatch.setattr(
-        tui, "_state", lambda paths: (True, True, "Z.ai")
-    )  # is_zai=True → flip to openai
-    monkeypatch.setattr(
         parser,
         "_apply_provider_pipeline",
         lambda fn, stream, dry_run=False: applied.append(fn.__name__),
     )
     monkeypatch.setattr(tui, "_pause", lambda: None)
-    tui._dispatch("toggle-zai", argparse.Namespace(), _ns())
+    # state[0]=is_zai=True → flip to openai (state passed in, no _state call).
+    tui._dispatch("toggle-zai", argparse.Namespace(), _ns(), (True, True, "Z.ai"))
     assert applied == ["apply_openai"]
 
 
@@ -108,7 +109,7 @@ def test_run_arrow_keys_and_quit(monkeypatch):
     keys = iter(("DOWN", "DOWN", "DOWN", "DOWN", "DOWN", "\r"))
     monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
     monkeypatch.setattr(
-        tui, "_dispatch", lambda kind, paths, args: kind == "action-quit"
+        tui, "_dispatch", lambda kind, paths, args, state: kind == "action-quit"
     )
     assert tui.run(_ns()) == 0
 

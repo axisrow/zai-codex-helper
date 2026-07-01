@@ -44,7 +44,7 @@ from typing import Any
 from zai_codex_helper.backends.base import ConfigBackend
 from zai_codex_helper.services.paths import Paths
 
-__all__ = ["PlistBackend", "canonical_plist", "LABEL"]
+__all__ = ["PlistBackend", "canonical_plist", "LABEL", "PLIST_FILENAME"]
 
 #: The exact, stable launchd ``Label`` for the Moon Bridge LaunchAgent (D-59).
 #:
@@ -60,7 +60,7 @@ LABEL: str = "dev.zai.moonbridge"
 #: The fixed plist filename, paired 1:1 with :data:`LABEL` (D-59, D-60). The
 #: backend appends this to ``paths.launchagents_dir`` because ``Paths`` exposes
 #: the DIRECTORY, not a plist-path field.
-_PLIST_FILENAME: str = "dev.zai.moonbridge.plist"
+PLIST_FILENAME: str = "dev.zai.moonbridge.plist"
 
 
 def canonical_plist(paths: Paths) -> dict[str, Any]:
@@ -150,7 +150,7 @@ class PlistBackend(ConfigBackend):
         super().__init__(paths, "launchagents_dir")
         # Override: Paths exposes the directory; the backend owns the fixed
         # filename (paired with LABEL).
-        self._path = paths.launchagents_dir / _PLIST_FILENAME
+        self._path = paths.launchagents_dir / PLIST_FILENAME
 
     def read(self) -> dict[str, Any]:
         """Parse the plist via ``plistlib.load`` and return the dict (D-59).

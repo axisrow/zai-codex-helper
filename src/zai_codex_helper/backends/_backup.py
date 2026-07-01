@@ -125,18 +125,21 @@ class BackupCoordinator:
         # D-28: sibling .bak, NOT inside paths.backup_dir.
         bak = src.parent / (src.name + BAK_SUFFIX)
 
-        # The .bak of the secrets file (moonbridge-zai.yml) holds the SAME
-        # spendable Z.ai key, so it MUST be 0600 too — a world-readable .bak is
-        # a key leak just like a world-readable live file. Non-secret files
-        # (config.toml) keep mode=None. Resolve the secret mode by identity with
-        # the injected secrets path (not a filename guess elsewhere in the tree).
-        secret = src == paths.moonbridge_yml
-        bak_mode = 0o600 if secret else None
+        # The .bak inherits the backend's DECLARED backup mode: a secrets
+        # backend (YamlBackend) returns 0600 so its .bak — which holds the SAME
+        # spendable key — is restricted just like the live file; non-secret
+        # backends (config.toml) return None (inherit temp mode). The backend
+        # owns "am I a secret", so the coordinator no longer re-derives it by
+        # comparing paths (a fragile == that silently missed a second secrets
+        # file). "Restricted" == a 0600 mode was requested.
+        bak_mode = backend.backup_mode
+        restricted = bak_mode == 0o600
 
-        # Reject a symlinked .bak for the secrets file: following it would let a
-        # pre-planted symlink redirect the key copy (or a later chmod) onto an
-        # attacker-chosen path outside ~/.codex (a write/chmod-redirect gadget).
-        if secret and bak.is_symlink():
+        # Reject a symlinked .bak for a restricted (secret) .bak: following it
+        # would let a pre-planted symlink redirect the key copy (or a later
+        # chmod) onto an attacker-chosen path outside ~/.codex (a write/chmod-
+        # redirect gadget).
+        if restricted and bak.is_symlink():
             raise ZaiCodexHelperError(
                 f"refusing to back up over a symlinked {bak.name} "
                 "(remove it and re-run)"
@@ -149,16 +152,16 @@ class BackupCoordinator:
         # would destroy the only rollback copy. Adopt the existing .bak, just
         # (re)write the per-file sentinel so future runs short-circuit here.
         if not bak.exists():
-            # Crash-safe copy via the Phase 3 primitive (CONF-01). For the
-            # secrets file, pass an EXPLICIT 0600 — do NOT rely on the temp
-            # file's default mode (fragile: a doc/impl change could regress it
+            # Crash-safe copy via the Phase 3 primitive (CONF-01). For a
+            # restricted backend, pass its EXPLICIT mode — do NOT rely on the
+            # temp file's default (fragile: a doc/impl change could regress it
             # to a world-readable .bak).
             atomic_write(bak, src.read_bytes(), mode=bak_mode)
-        elif secret:
-            # Adopted an existing .bak of the secrets file: it may predate this
+        elif restricted:
+            # Adopted an existing .bak of a secrets file: it may predate this
             # hardening (e.g. an old/manual 0644 backup still holding the key).
-            # Tighten it to 0600 so the adopted copy is not a lingering leak.
-            os.chmod(bak, 0o600)
+            # Tighten it to the declared mode so the adopted copy is not a leak.
+            os.chmod(bak, bak_mode)
 
         # Sentinel: existence is the gate. atomic_write (not plain touch)
         # so a crash between copy and sentinel still leaves a consistent

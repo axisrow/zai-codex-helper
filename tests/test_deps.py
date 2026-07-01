@@ -100,7 +100,9 @@ def test_detect_go_present_captures_version(monkeypatch):
     assert result.present is True
     assert result.path == "/usr/local/go/bin/go"
     assert "go1.25.0" in (result.version or "")
-    assert captured["argv"] == ["go", "version"]
+    # Version is captured from the RESOLVED path (what `which` found), not a
+    # bare `go` off PATH — guarantees the version matches the detected binary.
+    assert captured["argv"] == ["/usr/local/go/bin/go", "version"]
     # Short timeout must be supplied so detection never hangs.
     assert "timeout" in captured["kwargs"]
 

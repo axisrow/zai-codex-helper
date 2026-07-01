@@ -20,7 +20,8 @@ The key source + validation mirror ``setup`` exactly:
     ``<32-hex>.<16-alnum>`` Z.ai format) BEFORE it is written.
 
 ``--dry-run`` previews the would-be change as a unified diff with the key
-REDACTED (reuses :func:`redact_secrets`) — the secret never reaches stdout.
+REDACTED (via :func:`preview_yml_change`'s node-level fingerprinting) — the
+secret never reaches stdout.
 """
 
 from __future__ import annotations
@@ -36,9 +37,12 @@ from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.setup import _prompt_api_key, validate_api_key
 
-__all__ = ["set_key", "yml_has_auth_token"]
+__all__ = ["set_key", "yml_has_auth_token", "AUTH_TOKEN_PROMPT"]
 
-_AUTH_TOKEN_PROMPT = (
+#: The one-shot Yes/No prompt for dropping a foreign Moon Bridge auth_token
+#: (which would 401 Codex). Owned here (the auth_token vocabulary lives with
+#: yml_has_auth_token); setup imports it lazily to avoid the setup↔api_key cycle.
+AUTH_TOKEN_PROMPT = (
     "Moon Bridge has a local auth_token set, which breaks Codex (401). "
     "Switch Moon Bridge to localhost-only mode (remove the token)?"
 )
@@ -121,7 +125,7 @@ def set_key(
 
     # If Moon Bridge has a local auth_token, Codex gets 401. Ask ONCE whether to
     # drop it (localhost-only). No/declined → leave the yml untouched + warn.
-    drop_token = yml_has_auth_token(data) and confirm_fn(_AUTH_TOKEN_PROMPT)
+    drop_token = yml_has_auth_token(data) and confirm_fn(AUTH_TOKEN_PROMPT)
     if yml_has_auth_token(data) and not drop_token:
         print_fn(
             "warning: Moon Bridge auth_token left in place — Codex will likely "

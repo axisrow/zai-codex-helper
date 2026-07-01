@@ -114,17 +114,17 @@ def detect_go() -> DepResult:
 
 
 def _capture_go_version(go_path: str) -> str | None:
-    """Run ``go version`` once with a short timeout, never raising (D-63).
+    """Run ``<go_path> version`` once with a short timeout, never raising (D-63).
 
     Any failure (timeout, non-zero exit, OSError) degrades to ``None`` so
     detection stays side-effect-free and never propagates a subprocess error
-    into the caller. ``go_path`` is used only so a future implementation
-    could call ``[go_path, "version"]`` instead of relying on ``PATH``; the
-    default path here matches the documented ``go version`` invocation.
+    into the caller. Invokes the RESOLVED ``go_path`` (from ``shutil.which``),
+    not a bare ``go`` off ``PATH``, so the reported version is guaranteed to be
+    the same binary detection found.
     """
     try:
         proc = subprocess.run(
-            ["go", "version"],
+            [go_path, "version"],
             capture_output=True,
             text=True,
             timeout=_GO_VERSION_TIMEOUT,

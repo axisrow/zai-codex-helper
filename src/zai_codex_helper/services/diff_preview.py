@@ -15,14 +15,13 @@ Why a separate module (D-99):
   and the install-service summary all preview files; a single helper keeps the
   diff format + the "(no changes)" sentinel consistent.
 - **Secrets redaction lives here (D-77 / SECR-03).** The yml preview MUST NOT
-  leak the ``ZAI_API_KEY`` value to the terminal. :func:`redact_secrets`
-  replaces the key's value with ``<redacted>`` BEFORE :func:`compute_diff` ever
-  prints it. The setup dry-run branch therefore calls
-  ``compute_diff(path, redact_secrets(serialized_yml))`` — the diff the user
-  sees is of the REDACTED target, so the key literal never enters stdout.
+  leak the ``ZAI_API_KEY`` value to the terminal. :func:`preview_yml_change`
+  redacts BOTH sides at the NODE level (:func:`_redact_yaml` fingerprints every
+  secret value in the parsed tree) BEFORE diffing, so no key literal — however
+  the source encoded it — ever enters stdout.
 
 Scope discipline (D-100): this module adds NO new CLI command and NO new runtime
-dependency (:mod:`difflib` and :mod:`re` are stdlib). It is pure: it reads a
+dependency (:mod:`difflib` is stdlib). It is pure: it reads a
 path's current text (read-only) and returns a diff string. It performs NO write
 of any kind — the dry-run branches that call it are responsible for the
 no-write guarantee, pinned by the byte-identical HOME snapshot tests in
@@ -33,13 +32,12 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import re
 from collections.abc import Callable
 from pathlib import Path
 
 import yaml
 
-__all__ = ["compute_diff", "preview_yml_change", "redact_secrets", "NO_CHANGES"]
+__all__ = ["compute_diff", "preview_yml_change", "NO_CHANGES"]
 
 #: The literal returned by :func:`compute_diff` when the target text equals the
 #: current file text (or both are empty). The dry-run branches print this verbatim
@@ -51,19 +49,6 @@ NO_CHANGES = "(no changes)"
 #: the yml diff is printed (D-77 / SECR-03 / threat T-15-01). The real key value
 #: NEVER reaches stdout when the setup dry-run branch previews the yml.
 _REDACTED_PLACEHOLDER = "<redacted>"
-
-#: Regex matching any line in ``moonbridge-zai.yml`` that carries a secret.
-#: The Z.ai key lives in ``providers.<name>.api_key`` (Moon Bridge's real
-#: schema), but legacy helper versions also wrote a top-level ``ZAI_API_KEY``.
-#: Both must be redacted before a dry-run diff reaches stdout. Matches a YAML
-#: mapping line whose key is ``ZAI_API_KEY`` OR ends with ``api_key`` (catches
-#: the nested ``    api_key: <value>`` under providers). Anchored on ``:`` so a
-#: comment/docstring that merely MENTIONS the name is NOT touched.
-_ZAI_API_KEY_LINE_RE = re.compile(
-    r"^(\s*(?:ZAI_API_KEY|auth_token|.*api_key):).*$",
-    re.MULTILINE,
-)
-
 
 def compute_diff(path: Path, target_text: str) -> str:
     """Return a unified diff of ``target_text`` against the current ``path`` content.
@@ -92,11 +77,11 @@ def compute_diff(path: Path, target_text: str) -> str:
         target_text: The WOULD-BE file content (the canonical target bytes after
             the transform), as a ``str``. The caller computes this WITHOUT
             writing (e.g. ``tomlkit.dumps(doc)`` or
-            ``yaml.safe_dump(body, ...)``). For a secrets-bearing target, the
-            caller MUST pass ``redact_secrets(serialized)`` — this function does
-            NOT redact (it diffs whatever it is given); the redaction seam is
-            deliberately at the call site so a non-secrets file (config.toml,
-            .zshrc) is never accidentally mangled.
+            ``yaml.safe_dump(body, ...)``). This function does NOT redact — it
+            diffs whatever it is given. A secrets-bearing preview must redact
+            BOTH sides first (see :func:`preview_yml_change`, which node-level
+            fingerprints secret values before calling the diff), so a non-secret
+            file (config.toml, .zshrc) is never accidentally mangled here.
 
     Returns:
         The unified diff as a single ``str`` (lines joined by ``"\\n"``), or
@@ -139,47 +124,6 @@ def _diff_texts(path: Path, current_text: str, target_text: str) -> str:
         lineterm="",
     )
     return "\n".join(diff)
-
-
-def redact_secrets(text: str) -> str:
-    """Replace any ``ZAI_API_KEY: <value>`` line's value with ``<redacted>`` (D-77).
-
-    The setup dry-run branch previews ``moonbridge-zai.yml``, which holds the
-    user's ``ZAI_API_KEY``. SECR-03 / D-77 forbid the key value from EVER
-    entering stdout — including the diff preview. This helper rewrites the
-    ``ZAI_API_KEY:`` mapping line to ``ZAI_API_KEY: <redacted>`` BEFORE the
-    caller passes the serialized yml to :func:`compute_diff`, so the diff the
-    user sees exposes the model/server changes (the real value of the preview)
-    WITHOUT leaking the secret.
-
-    The pattern is NARROW by design (T-15-05 — accept disposition): it matches
-    ONLY the YAML mapping shape ``ZAI_API_KEY: <anything>`` at the start of a
-    line. It does NOT match:
-
-    - ``environ.get("ZAI_API_KEY")`` — the legit env READ (no ``:`` mapping; the
-      name is inside quotes, not a bare YAML key).
-    - Docstrings / comments that merely MENTION the name without the ``: ``.
-    - ``model`` / ``server`` / any other yml key (only the API-key line is
-      secret; the rest of the yml body is safe to show).
-
-    Args:
-        text: The serialized YAML (or any text containing the
-            ``ZAI_API_KEY: <value>`` line). Typically the output of
-            ``yaml.safe_dump(yml_body, sort_keys=False, ...)``.
-
-    Returns:
-        The text with the ``ZAI_API_KEY:`` line's value replaced by
-        ``<redacted>``. If the line is absent (no key present), the text is
-        returned unchanged.
-    """
-    # group(1) is the ``ZAI_API_KEY:`` literal (preserved); the rest of the line
-    # (the value) is dropped and replaced by the placeholder. MULTILINE so ``^``
-    # matches the start of every line (yaml.safe_dump emits the key on its own
-    # line).
-    return _ZAI_API_KEY_LINE_RE.sub(
-        lambda m: f"{m.group(1)} {_REDACTED_PLACEHOLDER}",
-        text,
-    )
 
 
 #: Mapping keys whose VALUE is a secret and must be fingerprint-redacted before
@@ -253,10 +197,10 @@ def preview_yml_change(
     The single shared dry-run-preview path for every yml-mutating command
     (``setup`` step 3, ``set-key``). Serializes ``body`` with the
     CLAUDE.md-canonical ``yaml.safe_dump`` args (matching what
-    :meth:`YamlBackend.write_canonical` produces byte-for-byte), redacts the
-    ``ZAI_API_KEY`` value via :func:`redact_secrets`, computes the diff against
-    the on-disk file via :func:`compute_diff`, and prints it. The key value
-    NEVER reaches stdout.
+    :meth:`YamlBackend.write_canonical` produces byte-for-byte), fingerprint-
+    redacts every secret value on BOTH sides via :func:`_redact_yaml`, computes
+    the diff against the on-disk file via :func:`compute_diff`, and prints it.
+    The key value NEVER reaches stdout.
     """
     # Redact BOTH sides at the NODE level before diffing (T-15-01 / SECR-03).
     # The diff shows the CURRENT on-disk yml against the would-be write, so a
