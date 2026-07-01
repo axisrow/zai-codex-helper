@@ -169,3 +169,47 @@ def test_uninstall_dry_run_shows_config_diff(tmp_path, monkeypatch, capsys):
     # The config-revert diff was surfaced (not silently dropped). The target
     # header names config.toml; the revert removes the model_provider pointer.
     assert "config.toml" in combined
+
+
+@pytest.mark.unit
+def test_run_setup_real_run_emits_restart_warning(tmp_path, monkeypatch, capsys):
+    """C3 regression: a real run_setup (the install path) emits the D-47 restart warning.
+
+    install routes its provider write THROUGH run_setup; the old injected pipeline
+    warned the user to restart Codex Desktop after the config write. run_setup must
+    render that warning on a real apply (not just dry-run), else install silently
+    changes config.toml and a Desktop user keeps the old provider.
+    """
+    from zai_codex_helper.services.setup import run_setup
+
+    _precreate_binary(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+
+    run_setup(
+        paths,
+        provider="zai",
+        confirm_fn=lambda *_a, **_k: True,
+    )
+
+    err = capsys.readouterr().err
+    assert "RESTART REQUIRED" in err  # D-47 warning reached stderr
+    assert "does NOT live-reload" in err
+
+
+@pytest.mark.unit
+def test_parser_reexports_both_render_helpers():
+    """C4 regression: both moved renderers still resolve under their parser names."""
+    from zai_codex_helper.cli.parser import (
+        _emit_restart_warning,
+        _render_apply_result,
+    )
+    from zai_codex_helper.services.provider_apply import (
+        render_apply_result,
+        render_restart_warning,
+    )
+
+    assert _emit_restart_warning is render_restart_warning
+    assert _render_apply_result is render_apply_result

@@ -330,15 +330,24 @@ def run_setup(
     # STEP 6 (D-76 step 5) — APPLY THE CHOSEN PROVIDER.
     # ------------------------------------------------------------------ #
     # The ONE provider-apply primitive (services layer; no cli import). On a real
-    # run it writes config.toml; on dry_run it returns the diff, which setup
-    # routes to print_fn. Setup emits its own summary (STEP 8) and no restart
-    # warning, so the result's other fields are ignored here.
-    from zai_codex_helper.services.provider_apply import apply_provider
+    # run it writes config.toml; on dry_run it returns the diff, routed to
+    # print_fn. On a real write, render the D-47 restart warning to sys.stderr —
+    # config.toml changed and Codex Desktop won't live-reload it. (This is why
+    # `install`, which routes its provider write THROUGH run_setup, still warns
+    # the user to restart — the old injected pipeline's warning lived here.)
+    import sys
+
+    from zai_codex_helper.services.provider_apply import (
+        apply_provider,
+        render_apply_result,
+    )
 
     transform = apply_zai if provider == "zai" else apply_openai
     result = apply_provider(paths, transform, dry_run=dry_run)
     if result.dry_run_diff is not None:
         print_fn(result.dry_run_diff)
+    else:
+        render_apply_result(result, sys.stderr)
 
     # ------------------------------------------------------------------ #
     # STEP 6.5 (D-98, SC-4 — models_cache.json glm-5.2 entry).

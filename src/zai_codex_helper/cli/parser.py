@@ -29,8 +29,11 @@ import sys
 # (services.provider_apply) so the ``uninstall`` macro can surface them without a
 # services→cli import. Re-exported here under their historical private names so
 # the ``use`` handlers, the TUI, and existing tests keep resolving them.
-from zai_codex_helper.services.provider_apply import (  # noqa: E402
+from zai_codex_helper.services.provider_apply import (  # noqa: E402, F401
     render_apply_result as _render_apply_result,
+)
+from zai_codex_helper.services.provider_apply import (  # noqa: E402, F401
+    render_restart_warning as _emit_restart_warning,
 )
 
 
