@@ -308,6 +308,31 @@ def test_command_sequence_clone_checkout_build(tmp_path, monkeypatch):
     assert build["kwargs"].get("cwd") == clone_dir
 
 
+@pytest.mark.unit
+def test_build_subprocess_env_excludes_zai_api_key(tmp_path, monkeypatch):
+    """#16: git/go child processes never inherit ZAI_API_KEY.
+
+    With the key set in the parent env, EVERY captured runner call must pass an
+    explicit `env` that omits ZAI_API_KEY (build/git must not leak the secret).
+    """
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+    _patch_detect_go(
+        monkeypatch, present=True, version="go version go1.25.0 darwin/arm64"
+    )
+    paths = Paths.from_home(tmp_path)
+    runner, captured = _recording_runner()
+
+    mb.build_moonbridge(paths, force=True, runner=runner)
+
+    assert len(captured) == 3
+    for call in captured:
+        env = call["kwargs"].get("env")
+        assert env is not None, f"no env passed to {call['argv'][:2]}"
+        assert "ZAI_API_KEY" not in env, f"key leaked to {call['argv'][:2]}"
+
+
 # ---------------------------------------------------------------------------
 # SC-2 — idempotency (D-72)
 # ---------------------------------------------------------------------------

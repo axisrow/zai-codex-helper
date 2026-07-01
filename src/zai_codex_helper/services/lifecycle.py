@@ -79,6 +79,7 @@ from zai_codex_helper.backends.plist import (
     canonical_plist,
 )
 from zai_codex_helper.errors import ZaiCodexHelperError
+from zai_codex_helper.services.env import child_env
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.providers import MOONBRIDGE_HOST, MOONBRIDGE_PORT
 
@@ -352,7 +353,9 @@ def install_service(
     #    not-registered label yields an already-booted-out stderr we swallow; a
     #    REAL failure raises before we touch the plist.
     bootout_argv = ["launchctl", "bootout", f"gui/{os.getuid()}/{LAUNCHAGENT_LABEL}"]
-    bootout_result = runner(bootout_argv, check=False, capture_output=True, text=True)
+    bootout_result = runner(
+        bootout_argv, check=False, capture_output=True, text=True, env=child_env()
+    )
     if bootout_result.returncode != 0:
         bootout_stderr = bootout_result.stderr or ""
         if not _matches_any(bootout_stderr, _ALREADY_BOOTED_OUT_PATTERNS):
@@ -372,7 +375,7 @@ def install_service(
     #     fallback (D-83) — the pre-bootout above makes this the exception,
     #     not the primary path.
     argv = ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist_path)]
-    result = runner(argv, check=False, capture_output=True, text=True)
+    result = runner(argv, check=False, capture_output=True, text=True, env=child_env())
     if result.returncode != 0:
         stderr = result.stderr or ""
         if not _matches_any(stderr, _ALREADY_LOADED_PATTERNS):
@@ -468,7 +471,7 @@ def uninstall_service(
         "bootout",
         f"gui/{os.getuid()}/{LAUNCHAGENT_LABEL}",
     ]
-    result = runner(argv, check=False, capture_output=True, text=True)
+    result = runner(argv, check=False, capture_output=True, text=True, env=child_env())
     if result.returncode != 0:
         stderr = result.stderr or ""
         if not _matches_any(stderr, _ALREADY_BOOTED_OUT_PATTERNS):
@@ -527,7 +530,7 @@ def verify_service_loaded(
         "print",
         f"gui/{os.getuid()}/{LAUNCHAGENT_LABEL}",
     ]
-    result = runner(argv, check=False, capture_output=True, text=True)
+    result = runner(argv, check=False, capture_output=True, text=True, env=child_env())
     combined = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
     launchctl_loaded = (
         result.returncode == 0 and "could not find service" not in combined
