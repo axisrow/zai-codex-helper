@@ -320,6 +320,76 @@ def test_atomic_write_creates_missing_parent_dirs(tmp_path):
     assert dest.parent.is_dir(), "parent directories were not created"
 
 
+@pytest.mark.unit
+def test_atomic_write_clears_a_directory_at_the_dest(tmp_path):
+    """#14: a directory at the dest is cleared so os.replace can land the file.
+
+    os.replace cannot overwrite a directory with a file (IsADirectoryError). A
+    dir left at ANY backend's wholesale-write dest (config.toml, moonbridge-zai.yml,
+    the plist, .zshrc) would crash the write; atomic_write self-heals it here so
+    every backend is covered by one guard, not a per-backend special case.
+    """
+    dest = tmp_path / "cfg.toml"
+    dest.mkdir()
+    (dest / "stray.txt").write_text("junk")  # non-empty → rmtree must recurse
+
+    atomic_write(dest, b"canonical")  # must not raise
+
+    assert dest.is_file()
+    assert dest.read_bytes() == b"canonical"
+
+
+@pytest.mark.unit
+def test_atomic_write_over_symlink_does_not_rmtree_target(tmp_path):
+    """The dir-clear must NOT follow a symlink and wipe its target's contents.
+
+    lstat (not stat) detects the symlink without following it, and S_ISDIR on the
+    lstat result is False for a symlink-to-dir, so rmtree is skipped and os.replace
+    overwrites the link with the real file — leaving the target directory intact.
+    """
+    dest = tmp_path / "cfg.toml"
+    target = tmp_path / "real_dir"
+    target.mkdir()
+    (target / "keep.txt").write_text("precious")
+    os.symlink(target, dest)
+
+    atomic_write(dest, b"canonical")  # must not raise, must not touch target/
+
+    assert dest.is_file()
+    assert not dest.is_symlink()
+    assert dest.read_bytes() == b"canonical"
+    assert (target / "keep.txt").read_text() == "precious"  # target untouched
+
+
+@pytest.mark.unit
+def test_atomic_write_leaves_no_temp_when_dir_clear_fails(tmp_path, monkeypatch):
+    """If rmtree of a dir-at-dest fails, the temp is cleaned up and the error propagates.
+
+    The dir-clear runs inside the same try that guards os.replace, so a failing
+    rmtree (e.g. a permission error on a child) triggers the temp-unlink cleanup
+    (no orphan temp) and re-raises — never a silent half-write.
+    """
+    dest = tmp_path / "cfg.toml"
+    dest.mkdir()
+    (dest / "child").write_text("x")
+
+    def boom(_path):
+        raise PermissionError("cannot remove child")
+
+    monkeypatch.setattr(atomic_mod.shutil, "rmtree", boom)
+
+    with pytest.raises(PermissionError):
+        atomic_write(dest, b"canonical")
+
+    # No orphaned temp sibling survived the failure (T-03-05).
+    leftovers = [
+        p
+        for p in os.listdir(tmp_path)
+        if p != "cfg.toml" and not p.startswith(".codex")
+    ]
+    assert leftovers == [], f"orphaned temp survived: {leftovers}"
+
+
 # --------------------------------------------------------------------------- #
 # Local helpers — module-namespace monkeypatching (intercepts the helper's
 # exact os.replace / tempfile.NamedTemporaryFile calls).

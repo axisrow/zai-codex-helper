@@ -63,12 +63,10 @@ TESTABILITY (D-83):
 from __future__ import annotations
 
 import os
-import plistlib
 import socket
 import subprocess
 import sys
 from collections.abc import Callable
-from xml.parsers.expat import ExpatError
 
 # D-85 (SERV-03, load-bearing): import the Label, do NOT re-string it. The
 # ``is`` identity between lifecycle.LAUNCHAGENT_LABEL and backends.plist.LABEL
@@ -199,23 +197,28 @@ def _plist_drifted(paths: Paths) -> bool:
     (nothing loaded to converge with). Mirrors terraform-style "diff vs actual",
     NOT an "installed" boolean.
 
-    A truncated/corrupted plist also counts as drifted (not merely "absent"):
-    ``PlistBackend.read()`` raises ``plistlib.InvalidFileException`` on malformed
-    content. Before this convergence gate existed, ``install`` unconditionally
-    rewrote the plist, so a corrupted file self-healed on the next install. The
-    gate must preserve that self-heal — treat a read failure as drift so install
-    falls through to bootout→write→bootstrap instead of crashing.
+    A corrupted plist ALSO counts as drifted (not merely "absent"): before this
+    convergence gate existed, ``install`` unconditionally rewrote the plist, so a
+    corrupted file self-healed on the next install. The gate must preserve that
+    self-heal — ANY read failure is treated as drift so install falls through to
+    bootout→write→bootstrap instead of crashing.
     """
     backend = PlistBackend(paths)
-    if not backend.exists():
-        return True
     try:
+        if not backend.exists():
+            return True
         on_disk = backend.read()
-    except (plistlib.InvalidFileException, ExpatError, OSError):
-        # plistlib.load() parses XML via the stdlib expat parser: a plist
-        # truncated mid-tag (e.g. an interrupted write) raises ExpatError, NOT
-        # InvalidFileException — both shapes of corruption must self-heal the
-        # same way (fall through to bootout→write→bootstrap), not crash.
+    except Exception:  # noqa: BLE001
+        # ponytail: any read failure = drifted. This function answers one
+        # question — "can I trust what's on disk?" — so every failure mode means
+        # "no, rewrite it": InvalidFileException (garbage bytes), ExpatError
+        # (truncated XML), ValueError / AttributeError (a malformed <integer> /
+        # <date> plistlib can't coerce), IsADirectoryError / PermissionError, or
+        # a race where the file vanished after exists(). An enumerated tuple grew
+        # one type per review round (#13) and still missed ValueError/
+        # AttributeError; the broad catch is both correct and non-growing. The
+        # ceiling: it also swallows a genuine bug in read() — acceptable here
+        # because the only consequence is an extra (idempotent) plist rewrite.
         return True
     return on_disk != canonical_plist(paths)
 

@@ -30,6 +30,8 @@ here without rework.
 from __future__ import annotations
 
 import os
+import shutil
+import stat
 import tempfile
 from pathlib import Path
 
@@ -49,7 +51,11 @@ def atomic_write(path: str | Path, data: bytes | str, mode: int | None = None) -
        same-filesystem rename (atomic on POSIX/macOS; T-03-06).
     4. Write ``data`` (``str`` encoded UTF-8), ``flush()``, ``os.fsync(fd)``
        (load-bearing durability call).
-    5. Close the temp, then ``os.replace(temp, path)`` (atomic overwrite).
+    5. Close the temp; if a real DIRECTORY sits at ``path`` (which ``os.replace``
+       cannot overwrite with a file), ``shutil.rmtree`` it first — a directory at
+       a wholesale-write destination is corruption to clear, not content to keep
+       (symlinks are NOT followed/removed). Then ``os.replace(temp, path)``
+       (atomic overwrite).
     6. If ``mode is not None``, ``os.chmod(path, mode)`` AFTER replace (chmod
        the destination, never the temp — a crash between replace and chmod
        leaves a correctly-replaced file with old perms, not a half-applied
@@ -89,6 +95,22 @@ def atomic_write(path: str | Path, data: bytes | str, mode: int | None = None) -
         tmp.close()
 
     try:
+        # os.replace CANNOT overwrite a directory with a file (raises
+        # IsADirectoryError), so a directory left at the destination — by a
+        # botched write, a git-checkout collision, or manual tampering — would
+        # crash every backend that routes here. Backends write their file
+        # WHOLESALE (canonical), so a directory at the dest is corruption to
+        # clear, never content to preserve. Clear ONLY a real directory: lstat
+        # (does NOT follow symlinks) in one syscall, and skip symlinks so we
+        # never rmtree through a link into its target — os.replace overwrites a
+        # symlink (or a stale regular file) directly. A regular file / FIFO /
+        # socket / device is left for os.replace to overwrite as before.
+        try:
+            st = os.lstat(dest)
+        except OSError:
+            st = None  # dest absent (fresh write) or unstattable → let replace decide
+        if st is not None and stat.S_ISDIR(st.st_mode):
+            shutil.rmtree(dest)
         os.replace(tmp_name, str(dest))  # atomic overwrite on POSIX/macOS
     except BaseException:
         # replace failed → unlink the temp so no orphan survives (T-03-05),
