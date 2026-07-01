@@ -24,6 +24,7 @@ REDACTED (reuses :func:`redact_secrets`) — the secret never reaches stdout.
 
 from __future__ import annotations
 
+import getpass
 import os
 from collections.abc import Callable
 
@@ -62,7 +63,7 @@ def set_key(
     *,
     dry_run: bool = False,
     environ: os._Environ[str] = os.environ,
-    input_fn: Callable[[str], str] = input,
+    getpass_fn: Callable[[str], str] = getpass.getpass,
     confirm_fn: Callable[..., bool] = confirm,
     print_fn: Callable[..., None] = print,
 ) -> int:
@@ -80,8 +81,9 @@ def set_key(
         dry_run: When True, print a REDACTED diff of the would-be change and
             write nothing.
         environ: The environment read for ``ZAI_API_KEY`` (default os.environ).
-        input_fn: Interactive key-input source (default builtin ``input``);
-            used only when ``ZAI_API_KEY`` is unset and stdin is available.
+        getpass_fn: Interactive key-input source (default ``getpass.getpass``,
+            NEVER echoed — SECR-01); used only when ``ZAI_API_KEY`` is unset and
+            stdin is available.
         confirm_fn: Yes/No prompt for the auth_token removal (default
             :func:`confirm`); a non-interactive caller injects a stub returning
             ``False`` (safe-default: do not touch the yml).
@@ -107,13 +109,14 @@ def set_key(
             "moonbridge-zai.yml is unreadable or empty — run `setup` to regenerate it"
         )
 
-    # Resolve the new key: env first (headless), else interactive echoed prompt
-    # with retries. Both paths validate via validate_api_key() before use.
+    # Resolve the new key: env first (headless), else interactive getpass
+    # prompt (NEVER echoed) with retries. Both paths validate via
+    # validate_api_key() before use.
     new_key = environ.get("ZAI_API_KEY")
     if new_key:
         validate_api_key(new_key)
     else:
-        new_key = _prompt_api_key(input_fn)
+        new_key = _prompt_api_key(getpass_fn)
 
     # If Moon Bridge has a local auth_token, Codex gets 401. Ask ONCE whether to
     # drop it (localhost-only). No/declined → leave the yml untouched + warn.

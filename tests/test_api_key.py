@@ -80,16 +80,46 @@ def test_set_key_rejects_malformed_env_key(tmp_path, monkeypatch):
 
 @pytest.mark.unit
 def test_set_key_interactive_input(tmp_path, monkeypatch):
-    """Without env, the key is read via the echoed prompt (valid value)."""
+    """Without env, the key is read via the hidden getpass prompt (valid value)."""
     paths = Paths.from_home(tmp_path)
     _seed_yml(paths)
     monkeypatch.delenv("ZAI_API_KEY", raising=False)
 
-    rc = api_key.set_key(paths, environ=dict(os.environ), input_fn=lambda _p: _NEW)
+    rc = api_key.set_key(paths, environ=dict(os.environ), getpass_fn=lambda _p: _NEW)
 
     assert rc == 0
     data = yaml.safe_load(paths.moonbridge_yml.read_text())
     assert data["providers"]["zai"]["api_key"] == _NEW
+
+
+@pytest.mark.unit
+def test_set_key_reads_key_via_getpass_not_input(tmp_path, monkeypatch):
+    """SECR-01 regression: the interactive key is read via getpass (hidden), NOT input().
+
+    A prior commit had the key read through an echoed `input()` — a secret
+    leak to the terminal. This pins that the key source is the getpass_fn seam:
+    input() is not consulted, and the getpass_fn IS.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths)
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    # If the code ever falls back to builtin input(), fail loudly.
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda *_a, **_k: pytest.fail("key must not be read via echoed input()"),
+    )
+    called = {"getpass": False}
+
+    def fake_getpass(_prompt: str) -> str:
+        called["getpass"] = True
+        return _NEW
+
+    rc = api_key.set_key(
+        paths, environ=dict(os.environ), getpass_fn=fake_getpass
+    )
+
+    assert rc == 0
+    assert called["getpass"] is True
 
 
 @pytest.mark.unit

@@ -190,17 +190,18 @@ def validate_api_key(key: str) -> None:
         )
 
 
-def _prompt_api_key(input_fn: Callable[[str], str], *, max_attempts: int = 3) -> str:
+def _prompt_api_key(getpass_fn: Callable[[str], str], *, max_attempts: int = 3) -> str:
     """Prompt for the Z.ai API key, validating + retrying on malformed input.
 
-    Echoed (not getpass) so the user can see a typo. Up to ``max_attempts``
-    retries on a validation failure; on the final attempt the
+    Read via ``getpass`` so the secret is NEVER echoed to the terminal
+    (SECR-01, CLAUDE.md "never echoed/logged"). Up to ``max_attempts`` retries
+    on a validation failure; on the final attempt the
     :class:`ZaiCodexHelperError` propagates. The retry hint reuses the exact
     message :func:`validate_api_key` raised, so the format is described in ONE
     place.
     """
     for attempt in range(1, max_attempts + 1):
-        raw = input_fn("ZAI API key (will be visible): ")
+        raw = getpass_fn("ZAI API key: ")
         try:
             validate_api_key(raw)
         except ZaiCodexHelperError as e:
@@ -293,12 +294,11 @@ def run_setup(
             "ZAI_API_KEY env not set; pass it or run setup interactively"
         )
     else:
-        # Interactive → echoed input (NOT getpass). The key is a long opaque
-        # token (32-hex.16-alnum) that is easy to mistype blind; echoing it
-        # lets the user spot a typo, and validate_api_key() below catches a
-        # wrong-format key before it is written. Acceptable secret exposure
-        # in a local terminal (mirrors `gh auth login` / `npm config`).
-        api_key = _prompt_api_key(input_fn)
+        # Interactive → getpass (NEVER echoed, SECR-01). The key is a secret;
+        # validate_api_key() inside _prompt_api_key catches a mistyped/wrong-
+        # format key (with retries) before it is written, so hidden entry does
+        # not cost typo-detection.
+        api_key = _prompt_api_key(getpass_fn)
 
     # ------------------------------------------------------------------ #
     # STEP 3 (D-77, SECR-02) — WRITE moonbridge-zai.yml at 0600.
