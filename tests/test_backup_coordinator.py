@@ -41,15 +41,18 @@ from zai_codex_helper.services.paths import Paths
 
 
 class _PathOnly:
-    """Minimal backend double exposing just ``.path``.
+    """Minimal backend double exposing ``.path`` + ``.backup_mode``.
 
-    The coordinator only reads ``backend.path`` (D-30); a full
-    ``ConfigBackend`` subclass is not required for these coordinator
-    tests. Keeping it tiny isolates SC-1 to coordinator behaviour.
+    The coordinator reads ``backend.path`` (the source) and
+    ``backend.backup_mode`` (the declared ``.bak`` mode — ``None`` for a
+    non-secret file, ``0o600`` for a secrets backend). A full
+    ``ConfigBackend`` subclass is not required for these coordinator tests;
+    ``backup_mode`` defaults to ``None`` and secret-file tests pass ``0o600``.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, backup_mode: int | None = None) -> None:
         self.path = path
+        self.backup_mode = backup_mode
 
 
 def _seed_config(paths: Paths, content: bytes = b"ORIGINAL") -> None:
@@ -223,7 +226,7 @@ def test_backup_once_new_secret_bak_is_0600(tmp_path):
     """
     paths = Paths.from_home(tmp_path)
     _seed_secret_yml(paths)
-    backend = _PathOnly(paths.moonbridge_yml)
+    backend = _PathOnly(paths.moonbridge_yml, backup_mode=0o600)
 
     BackupCoordinator.backup_once(paths, backend)
 
@@ -244,7 +247,7 @@ def test_backup_once_tightens_adopted_world_readable_secret_bak(tmp_path):
 
     paths = Paths.from_home(tmp_path)
     _seed_secret_yml(paths)
-    backend = _PathOnly(paths.moonbridge_yml)
+    backend = _PathOnly(paths.moonbridge_yml, backup_mode=0o600)
     bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
     # A pre-existing world-readable .bak holding the key.
     bak.write_bytes(b"api_key: OLD_SECRET\n")
@@ -262,7 +265,7 @@ def test_backup_once_rejects_symlinked_secret_bak(tmp_path):
     """A symlinked secrets .bak is refused (write/chmod-redirect gadget)."""
     paths = Paths.from_home(tmp_path)
     _seed_secret_yml(paths)
-    backend = _PathOnly(paths.moonbridge_yml)
+    backend = _PathOnly(paths.moonbridge_yml, backup_mode=0o600)
     bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
     # Plant a symlink where the .bak would go.
     target = tmp_path / "elsewhere"

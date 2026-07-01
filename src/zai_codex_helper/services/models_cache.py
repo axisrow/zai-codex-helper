@@ -71,8 +71,6 @@ dependency (stdlib ``json`` only, via :class:`JsonBackend`).
 
 from __future__ import annotations
 
-import json
-
 from zai_codex_helper.backends.json_backend import JsonBackend
 from zai_codex_helper.services.paths import Paths
 
@@ -204,10 +202,9 @@ def compute_glm52_merged_text(paths: Paths) -> str:
     preview, so the user sees the would-be change (glm-5.2 added) without any
     mutation.
 
-    The merge is computed in-memory: read current (read-only), deep_merge the
-    override, apply the surgical ``models`` list-aware override, serialize with
-    the SAME ``json.dumps(indent=2)`` args :meth:`JsonBackend.write_canonical`
-    uses — so the preview matches the real write byte-for-byte.
+    Uses the SAME :func:`~zai_codex_helper.backends.json_backend.merged_cache_text`
+    recipe :meth:`JsonBackend.write_canonical` uses — so the preview matches the
+    real write byte-for-byte (one merge recipe, no drift).
 
     Args:
         paths: The resolved :class:`Paths` bundle.
@@ -216,24 +213,6 @@ def compute_glm52_merged_text(paths: Paths) -> str:
         The would-be on-disk JSON text (2-space indent, key order preserved),
         matching what :func:`update_models_cache` would produce.
     """
-    from zai_codex_helper.backends.json_backend import (
-        _MODELS_KEY,
-        deep_merge,
-        merge_model_list,
-    )
+    from zai_codex_helper.backends.json_backend import merged_cache_text
 
-    backend = JsonBackend(paths)
-    current = backend.read()
-    content = build_glm52_override()
-    merged = deep_merge(current, content)
-    # Mirror write_canonical's surgical list-aware override (read-only here).
-    if (
-        _MODELS_KEY in current
-        and _MODELS_KEY in content
-        and isinstance(current[_MODELS_KEY], list)
-        and isinstance(content[_MODELS_KEY], list)
-    ):
-        merged[_MODELS_KEY] = merge_model_list(
-            current[_MODELS_KEY], content[_MODELS_KEY]
-        )
-    return json.dumps(merged, indent=2)
+    return merged_cache_text(JsonBackend(paths).read(), build_glm52_override())

@@ -150,8 +150,14 @@ def _is_disabled(kind: str, state: tuple[bool, bool, str]) -> bool:
     return False
 
 
-def _dispatch(kind: str, paths, args: argparse.Namespace) -> bool:
+def _dispatch(
+    kind: str, paths, args: argparse.Namespace, state: tuple[bool, bool, str]
+) -> bool:
     """Run the selected menu item. Returns True iff the TUI should quit.
+
+    ``state`` is the loop's already-computed ``_state(paths)`` tuple — passed in
+    so ``toggle-zai`` reuses the cached ``is_zai`` instead of a second
+    ``_state`` call (which shells out to a slow ``launchctl print``).
 
     Lazy imports keep ``tui.py`` import-light and side-effect-free at module
     load (mirrors the lazy-import discipline in ``cli/parser.py`` handlers).
@@ -174,8 +180,9 @@ def _dispatch(kind: str, paths, args: argparse.Namespace) -> bool:
 
         uninstall_macro(paths, apply_pipeline=_apply_provider_pipeline, dry_run=dry)
     elif kind == "toggle-zai":
-        # Flip the config provider: zai→openai or openai→zai.
-        is_zai, _, _ = _state(paths)
+        # Flip the config provider: zai→openai or openai→zai. Reuse the loop's
+        # cached is_zai (no second launchctl-backed _state call).
+        is_zai = state[0]
         _apply_provider_pipeline(
             apply_openai if is_zai else apply_zai, sys.stderr, dry_run=dry
         )
@@ -244,7 +251,7 @@ def run(args: argparse.Namespace) -> int:
                     _pause()
                     continue
                 try:
-                    if _dispatch(kind, paths, args):
+                    if _dispatch(kind, paths, args, state):
                         return 0  # Quit — exit without pausing.
                 except ZaiCodexHelperError as e:
                     # D-11 contract honored in-loop: the TUI owns its event

@@ -1,76 +1,29 @@
 """Argparse parser builder for the ``zai-codex-helper`` CLI.
 
-The parser produced here is the dispatch contract every later phase plugs
-into: each subcommand registers a handler via ``set_defaults(func=...)``,
-and :func:`zai_codex_helper.__main__.main` calls ``args.func(args)``. Phase 1
-wired stub handlers that print ``"<name>: not implemented in this phase"``;
-phases 7/8/12/13/14 replace those stubs with real handlers by swapping the
-``func`` default — no dispatch code changes required.
-
-Phase 4 (D-31): ``restore`` is the FIRST real (non-stub) subcommand. It
-calls :meth:`BackupCoordinator.restore` (Plan 04-01) via the D-11 error
-contract — the handler does NOT catch/print/exit itself; any
+The dispatch contract: each subcommand registers a handler via
+``set_defaults(func=...)``, and :func:`zai_codex_helper.__main__.main` calls
+``args.func(args)``. Handlers are THIN SHELLS — resolve ``Paths.default()``,
+delegate to a service, return its int. They do NOT catch/print/exit (D-11): a
 :class:`ZaiCodexHelperError` propagates to :func:`main`, which formats it as
-one-line stderr + exit 1 (and re-raises under ``--debug``).
+one-line stderr + exit 1 (full traceback under ``--debug``). Bare
+``zai-codex-helper`` (no subcommand) opens the interactive TUI.
 
-Phase 7 (D-45/D-47, PROV-01/02/04): ``use zai`` and ``use openai`` are the
-second and third real subcommands — the Core Value. They delegate to the
-shared :func:`_apply_provider_pipeline` (the D-45 end-to-end write path:
+The subcommands: ``use zai`` / ``use openai`` (the Core Value — switch the
+config.toml provider via the shared :func:`_apply_provider_pipeline`:
 seed-if-missing → backup_once → read → apply_zai/apply_openai →
-write_canonical → check_postconditions → restart warning) and emit a
-hard-to-miss restart warning to stderr (D-47). The remaining commands remain
-stubs until their phases.
+write_canonical → check_postconditions → restart warning), ``restore``
+(roll config.toml back to its one-shot ``.bak``), ``status`` (read-only
+provider/paths/version), ``setup`` (the onboarding orchestrator),
+``set-key`` (rotate the Z.ai key), ``install-service`` / ``uninstall-service``
+(the Moon Bridge LaunchAgent), and ``doctor`` (the read-only chain diagnostic).
 
-Phase 8 (D-50..D-55, PROV-05): ``status`` is the read-only observability
-companion to the Core Value. After ``use zai``, a user runs ``status`` to
-confirm Z.ai is active at a glance — provider + config paths + version, in
-plain text, with NO writes (D-51 — load-bearing). It reuses Phase 5's
-:class:`TomlBackend.read` (read-only) via the Phase 8 read-boundary
-translator (:func:`zai_codex_helper.services.status.read_for_status`), Phase
-2's :meth:`Paths.default`, Phase 1's :data:`__version__`, and Phase 6's
-provider constants. Detection (D-53) is delegated to the pure
-:func:`zai_codex_helper.services.status.detect_provider` helper. The other
-four commands (setup/doctor/install-service/uninstall-service) remain stubs.
-
-Phase 12 (D-76..D-82, SETUP-01/02/03, SECR-01/03): ``setup`` is the onboarding
-capstone — the FOURTH real (non-stub) subcommand. It delegates to
-:func:`zai_codex_helper.services.setup.run_setup`, the services-layer
-orchestrator that composes every prior phase (Paths, backup, TomlBackend,
-YamlBackend@0600, ShellBackend, build_moonbridge, the provider pipeline)
-into one interactive + scriptable + idempotent end-to-end flow. The handler
-is a thin shell: it resolves ``Paths.default()`` and forwards
-``getattr(args, 'yes', False) or getattr(args, 'no_input', False)`` (D-79 — both flags map to headless mode) +
-``getattr(args, 'dry_run', False)``. All step logic lives in the orchestrator (D-81). A new
-``--no-input`` root flag mirrors ``--yes`` for non-interactive automation.
-install-service / uninstall-service / doctor REMAINED stubs until their phases.
-
-Phase 14 (D-89..D-94, DIAG-01..04): ``doctor`` is the SEVENTH real (non-stub)
-subcommand — the LAST Phase 1 stub to become real. It delegates to
-:func:`zai_codex_helper.services.doctor.run_doctor`, the READ-ONLY 9-check
-diagnostic pipeline. The Phase 1 stub set is now EMPTY: all of
-use/restore/status/setup/install-service/uninstall-service/doctor are real.
-The ``_stub`` helper is retained (tests may reference it) but the stub
-registration loop is gone.
+Root flags (``--debug`` / ``--yes`` / ``--no-input`` / ``--dry-run``) attach
+via a single shared parent parser so they parse BOTH before and after the
+subcommand.
 """
 
 import argparse
 import sys
-from types import SimpleNamespace
-
-
-def _stub(name: str):
-    """Return a stub handler that prints ``not implemented`` to stderr.
-
-    Stubs return 0 so smoke ``--help`` stays exit 0 and an accidental stub
-    invocation does no harm; the contract does not mandate a non-zero stub
-    exit (RESEARCH Open Question 1 — resolved: exit 0 + stderr message).
-    """
-
-    def handler(args: argparse.Namespace) -> int:
-        print(f"{name}: not implemented in this phase", file=sys.stderr)
-        return 0
-
-    return handler
 
 
 def _emit_restart_warning(stream) -> None:
@@ -332,22 +285,20 @@ def _handle_restore(args: argparse.Namespace) -> int:
     coordinator itself is NOT redefined here. Paths resolve via
     :meth:`Paths.default()` (never hard-codes ``~/.codex``).
 
-    Note on the backend: ``BackupCoordinator.restore`` only reads
-    ``backend.path`` (the live file to restore into). ``TomlBackend`` (the
-    real concrete backend) lands in Phase 5, so a path-only
-    :class:`types.SimpleNamespace` satisfies the coordinator's contract
-    today. This is a Phase-4 expedient — replaced by ``TomlBackend`` in
-    Phase 5.
+    Passes the real :class:`TomlBackend` to the coordinator so it sees a
+    full :class:`ConfigBackend` (path + declared ``backup_mode``), not a
+    path-only stand-in.
     """
     # Lazy imports keep `parser.py` import-light and side-effect-free at
     # module load (avoids walking _backup -> __main__ -> parser on import).
     from zai_codex_helper.backends._backup import BackupCoordinator
+    from zai_codex_helper.backends.toml import TomlBackend
     from zai_codex_helper.services.paths import Paths
 
     paths = Paths.default()
-    # Phase-4 expedient: path-only backend. BackupCoordinator.restore reads
-    # only backend.path; replaced by TomlBackend in Phase 5.
-    backend = SimpleNamespace(path=paths.config_toml)
+    # Pass the REAL TomlBackend (not a path-only stand-in) so the coordinator
+    # sees a full ConfigBackend — including its declared backup_mode.
+    backend = TomlBackend(paths)
     BackupCoordinator.restore(paths, backend)
     print(f"restored {paths.config_toml}")
     return 0
@@ -710,33 +661,11 @@ def build_parser() -> argparse.ArgumentParser:
     subcommand opens the interactive TUI (the root's default ``func``); every
     subcommand overrides it via its own ``set_defaults``.
     """
-    # Global flags (B-2 fix): work BOTH before AND after the subcommand.
-    # Root copy has normal False defaults; subparser copy uses SUPPRESS so
-    # it doesn't override root-parsed values (argparse subparser quirk).
-    global_flags = argparse.ArgumentParser(add_help=False)
-    global_flags.add_argument(
-        "--debug",
-        action="store_true",
-        help="show full traceback on error",
-    )
-    global_flags.add_argument(
-        "--yes",
-        "-y",
-        action="store_true",
-        help="answer yes to all prompts (non-interactive)",
-    )
-    global_flags.add_argument(
-        "--no-input",
-        action="store_true",
-        help="non-interactive: no prompts, env vars required",
-    )
-    global_flags.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="preview changes without writing",
-    )
-
-    # Subparser copy with SUPPRESS defaults (post-subcommand flags).
+    # Global flags (B-2 fix): work BOTH before AND after the subcommand. ONE
+    # shared parent parser (SUPPRESS defaults) is attached to the root parser AND
+    # every subparser via parents=[sub_flags], so `--debug`/`--yes`/`--no-input`/
+    # `--dry-run` parse in either position. SUPPRESS means a subparser copy does
+    # not override a value the root already parsed (argparse subparser quirk).
     sub_flags = argparse.ArgumentParser(add_help=False)
     sub_flags.add_argument(
         "--debug",
@@ -779,7 +708,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="<command>",
     )
 
-    # `use` — nested provider sub-subs (D-03). Phase 7 swaps _stub for real handlers.
+    # `use` — nested provider sub-subs (D-03).
     p_use = subparsers.add_parser(
         "use",
         help="switch the default Codex provider",

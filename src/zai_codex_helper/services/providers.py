@@ -37,6 +37,8 @@ from zai_codex_helper.backends.toml import upsert_block
 from zai_codex_helper.errors import ZaiCodexHelperError
 
 __all__ = [
+    "MOONBRIDGE_HOST",
+    "MOONBRIDGE_PORT",
     "ZAI_PROVIDER_ID",
     "ZAI_PROVIDER_BLOCK",
     "ZAI_MODEL",
@@ -47,6 +49,14 @@ __all__ = [
     "apply_openai",
     "check_postconditions",
 ]
+
+#: Moon Bridge's loopback listen address — the SINGLE source of truth for the
+#: host/port, imported by setup (the yml `server.addr`), lifecycle (the port
+#: probe), and doctor (the HTTP probes) instead of each re-declaring it. Loopback
+#: only (CLAUDE.md "The Moon Bridge Question"); the provider `base_url` below is
+#: derived from these so the config.toml pointer and the probes never diverge.
+MOONBRIDGE_HOST = "127.0.0.1"
+MOONBRIDGE_PORT = 38440
 
 # --------------------------------------------------------------------------- #
 # Canonical desired-state templates (SC-1, D-39/D-40) — single source of truth.
@@ -64,7 +74,7 @@ ZAI_PROVIDER_ID = "zai-moonbridge"
 #: :func:`upsert_block` (replace-not-append, D-36).
 ZAI_PROVIDER_BLOCK: dict[str, str] = {
     "name": "Z.ai (Moon Bridge)",
-    "base_url": "http://127.0.0.1:38440/v1",
+    "base_url": f"http://{MOONBRIDGE_HOST}:{MOONBRIDGE_PORT}/v1",
     "wire_api": "responses",
     "env_key": "ZAI_API_KEY",
 }

@@ -76,6 +76,21 @@ class ConfigBackend(abc.ABC):
         """
         return self._path
 
+    @property
+    def backup_mode(self) -> int | None:
+        """The chmod mode the sibling ``.bak`` must land at (``None`` = inherit).
+
+        A backend declares its own file sensitivity ONCE here; the default is
+        ``None`` (no chmod — the ``.bak`` inherits the atomic-write temp mode,
+        matching the non-secret ``config.toml`` policy). A secrets backend
+        overrides this to ``0o600`` so :class:`BackupCoordinator` gives its
+        ``.bak`` the same restricted mode as the live file WITHOUT the
+        coordinator re-deriving secret-ness by path identity. "This file is a
+        secret" thus lives in one place (the backend), not in a ``Paths``
+        comparison inside the coordinator.
+        """
+        return None
+
     def _write_via_atomic(self, content: bytes | str, mode: int | None = None) -> None:
         """Crash-safe write of ``content`` to :attr:`path` (D-29, CONF-01).
 

@@ -1,9 +1,11 @@
-"""``zai-codex-helper set-key`` — replace only the ZAI_API_KEY in moonbridge-zai.yml.
+"""``zai-codex-helper set-key`` — replace only the Z.ai key in moonbridge-zai.yml.
 
 A focused single-responsibility alternative to re-running the full ``setup``
 onboarding when the user mistyped or rotated their Z.ai API key: read the
-existing ``moonbridge-zai.yml``, replace the ``ZAI_API_KEY`` field, and write
-the whole file back atomically at ``0600`` (``model`` / ``server`` untouched).
+existing ``moonbridge-zai.yml``, set ``providers.<name>.api_key`` (and drop any
+legacy top-level ``ZAI_API_KEY``), and write the whole file back atomically at
+``0600`` — the rest of the config (``server`` / ``routes`` / ``models``) is
+preserved.
 
 Why a separate command (not "just run setup again"): ``setup`` walks the
 entire onboarding (provider choice → build Moon Bridge → shell helpers →
@@ -20,7 +22,8 @@ The key source + validation mirror ``setup`` exactly:
     ``<32-hex>.<16-alnum>`` Z.ai format) BEFORE it is written.
 
 ``--dry-run`` previews the would-be change as a unified diff with the key
-REDACTED (reuses :func:`redact_secrets`) — the secret never reaches stdout.
+REDACTED (via :func:`preview_yml_change`'s node-level fingerprinting) — the
+secret never reaches stdout.
 """
 
 from __future__ import annotations
@@ -36,11 +39,26 @@ from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.setup import _prompt_api_key, validate_api_key
 
-__all__ = ["set_key", "yml_has_auth_token"]
+__all__ = [
+    "set_key",
+    "yml_has_auth_token",
+    "AUTH_TOKEN_PROMPT",
+    "AUTH_TOKEN_LEFT_WARNING",
+]
 
-_AUTH_TOKEN_PROMPT = (
+#: The one-shot Yes/No prompt for dropping a foreign Moon Bridge auth_token
+#: (which would 401 Codex). Owned here (the auth_token vocabulary lives with
+#: yml_has_auth_token); setup imports it lazily to avoid the setup↔api_key cycle.
+AUTH_TOKEN_PROMPT = (
     "Moon Bridge has a local auth_token set, which breaks Codex (401). "
     "Switch Moon Bridge to localhost-only mode (remove the token)?"
+)
+
+#: The warning printed when the user DECLINES to drop the auth_token (set-key
+#: and setup both emit this verbatim). Single-sourced here alongside the prompt.
+AUTH_TOKEN_LEFT_WARNING = (
+    "warning: Moon Bridge auth_token left in place — Codex will likely "
+    "get 401. Remove `server.auth_token` to fix (loopback needs no key)."
 )
 
 
@@ -121,12 +139,9 @@ def set_key(
 
     # If Moon Bridge has a local auth_token, Codex gets 401. Ask ONCE whether to
     # drop it (localhost-only). No/declined → leave the yml untouched + warn.
-    drop_token = yml_has_auth_token(data) and confirm_fn(_AUTH_TOKEN_PROMPT)
+    drop_token = yml_has_auth_token(data) and confirm_fn(AUTH_TOKEN_PROMPT)
     if yml_has_auth_token(data) and not drop_token:
-        print_fn(
-            "warning: Moon Bridge auth_token left in place — Codex will likely "
-            "get 401. Remove `server.auth_token` to fix (loopback needs no key)."
-        )
+        print_fn(AUTH_TOKEN_LEFT_WARNING)
         return 0
 
     import copy
