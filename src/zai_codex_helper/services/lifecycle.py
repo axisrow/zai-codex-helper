@@ -99,15 +99,29 @@ Runner = Callable[..., subprocess.CompletedProcess]
 _ALREADY_BOOTED_OUT_PATTERNS: tuple[str, ...] = (
     "could not find service",
     "input/output error",
+    # Fresh install: the label was never registered, so the pre-bootout in
+    # install_service has nothing to remove. Modern macOS reports this as
+    # rc=3 "Boot-out failed: 3: No such process" — the idempotent SUCCESS
+    # path, NOT an error. Without it, the FIRST-EVER install would raise
+    # before writing the plist. Match ONLY the specific "no such process"
+    # reason, NOT the generic "boot-out failed:" prefix — the latter also
+    # heads REAL failures like "Boot-out failed: 1: Operation not permitted",
+    # which uninstall_service MUST still raise on (threat T-13-05).
+    "no such process",
 )
 
 #: Known launchctl "already loaded" patterns (D-83 — idempotent install).
 #: bootstrap returns non-zero with one of these in stderr when the agent is
 #: already registered — that is idempotent SUCCESS for install, NOT an error.
-#: Substring-matched against the LOWERCASED stderr.
+#: Includes "input/output error": macOS launchctl returns rc=5 + this EIO
+#: message when the agent is already bootstrapped into a conflicted state —
+#: the same goal as "already bootstrapped" (mirrors bootout's
+#: :data:`_ALREADY_BOOTED_OUT_PATTERNS`). Substring-matched against the
+#: LOWERCASED stderr.
 _ALREADY_LOADED_PATTERNS: tuple[str, ...] = (
     "already bootstrapped",
     "already loaded",
+    "input/output error",
 )
 
 #: The port Moon Bridge listens on (CLAUDE.md "Moon Bridge": 127.0.0.1:38440).
@@ -190,10 +204,14 @@ def install_service(
       1. Platform gate (:func:`_gate_darwin`).
       2. ``PlistBackend(paths).write_canonical(canonical_plist(paths))`` —
          writes the FULL canonical plist wholesale (do NOT re-derive).
-      3. ``launchctl bootstrap gui/<UID> <plist_path>`` via ``runner`` with
-         ``check=False`` (in-band inspection so the idempotent "already loaded"
-         path is handled, not raised as :class:`subprocess.CalledProcessError`).
-         rc 0 → proceed. rc != 0 + an :data:`_ALREADY_LOADED_PATTERNS` entry →
+      3. ``launchctl bootout gui/<UID>/<LABEL>`` FIRST (idempotent — a
+         not-registered label yields an already-booted-out stderr we swallow),
+         THEN ``launchctl bootstrap gui/<UID> <plist_path>`` — both via
+         ``runner`` with ``check=False``. The pre-bootout forces launchd to
+         reload the freshly-written plist's ProgramArguments; without it an
+         in-place upgrade (e.g. a moved binary path) would keep the stale job
+         running while bootstrap reports "already loaded" success. bootstrap
+         rc 0 → proceed; rc != 0 + an :data:`_ALREADY_LOADED_PATTERNS` entry →
          idempotent success, proceed. Otherwise raise
          :class:`ZaiCodexHelperError`.
       4. :func:`verify_service_loaded` (D-86). Not-loaded → raise (SERV-04:
@@ -247,14 +265,36 @@ def install_service(
         print("would verify via launchctl print + port probe (127.0.0.1:38440)")
         return 0
 
-    # 2. Write the canonical plist (Phase 9 reuse — do NOT re-derive). The
+    plist_path = _plist_path(paths)
+
+    # 2. bootout any EXISTING registration FIRST (before writing the new plist).
+    #    launchd does NOT reload ProgramArguments for an already-bootstrapped
+    #    label, so on an in-place upgrade (e.g. the binary path moving to
+    #    ~/.codex/bin/moonbridge) a plain bootstrap would leave the STALE job
+    #    running while reporting success. bootout-then-bootstrap forces the new
+    #    plist to take effect. bootout is idempotent (check=False): a
+    #    not-registered label yields an already-booted-out stderr we swallow; a
+    #    REAL failure raises before we touch the plist.
+    bootout_argv = ["launchctl", "bootout", f"gui/{os.getuid()}/{LAUNCHAGENT_LABEL}"]
+    bootout_result = runner(bootout_argv, check=False, capture_output=True, text=True)
+    if bootout_result.returncode != 0:
+        bootout_stderr = bootout_result.stderr or ""
+        if not _matches_any(bootout_stderr, _ALREADY_BOOTED_OUT_PATTERNS):
+            raise ZaiCodexHelperError(
+                "launchctl bootout (pre-bootstrap) failed "
+                f"(rc={bootout_result.returncode}): {bootout_stderr.strip()}"
+            )
+        # Not registered yet (fresh install) — nothing to boot out, proceed.
+
+    # 3. Write the canonical plist (Phase 9 reuse — do NOT re-derive). The
     #    backend atomically writes the FULL canonical dict with absolute paths
     #    + KeepAlive/RunAtLoad; mode defaults to 0o644 inside PlistBackend.
     PlistBackend(paths).write_canonical(canonical_plist(paths))
 
-    # 3. launchctl bootstrap gui/<UID> <plist_path>. check=False so the
-    #    idempotent "already loaded" path is handled in-band (D-83).
-    plist_path = _plist_path(paths)
+    # 3b. launchctl bootstrap gui/<UID> <plist_path>. check=False so the
+    #     idempotent "already loaded" path is still handled in-band as a
+    #     fallback (D-83) — the pre-bootout above makes this the exception,
+    #     not the primary path.
     argv = ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist_path)]
     result = runner(argv, check=False, capture_output=True, text=True)
     if result.returncode != 0:
@@ -285,7 +325,12 @@ def install_service(
     return 0
 
 
-def uninstall_service(paths: Paths, *, runner: Runner = subprocess.run) -> int:
+def uninstall_service(
+    paths: Paths,
+    *,
+    runner: Runner = subprocess.run,
+    dry_run: bool = False,
+) -> int:
     """Uninstall the Moon Bridge LaunchAgent (D-84; SERV-02).
 
     The matched-uninstall half of the lifecycle pair. Runs the modern
@@ -310,16 +355,33 @@ def uninstall_service(paths: Paths, *, runner: Runner = subprocess.run) -> int:
         paths: The injected :class:`Paths` bundle (D-22).
         runner: The ONLY subprocess seam (D-84). Defaults to
             :func:`subprocess.run`; unit tests inject a recording fake.
+            NEVER called under ``dry_run``.
+        dry_run: When True, print a "would bootout + remove plist" summary
+            and return 0 WITHOUT calling ``runner``/launchctl or unlinking
+            the plist (symmetric with ``install_service``).
 
     Returns:
-        0 on success (the agent is de-registered AND the plist removed).
+        0 on success (the agent is de-registered AND the plist removed), or 0
+        after printing the dry-run summary when ``dry_run`` is True.
 
     Raises:
         ZaiCodexHelperError: on non-darwin (platform gate), or a REAL bootout
             failure (rc != 0 + non-already-booted-out stderr).
     """
-    # 1. Platform gate (D-84 step 1, D-88).
+    # 1. Platform gate (D-84 step 1, D-88). Runs even under dry_run: the
+    #    service commands are macOS-only, so a non-darwin dry-run is still an
+    #    actionable error rather than a meaningless summary.
     _gate_darwin()
+
+    # Dry-run branch (symmetric with install_service): print a "would do"
+    # summary and return 0 WITHOUT calling launchctl or unlinking the plist.
+    # Without this, `uninstall --dry-run` would really bootout the agent and
+    # delete the plist — a partial, destructive "dry" run.
+    if dry_run:
+        plist_path = _plist_path(paths)
+        print(f"would run: launchctl bootout gui/{os.getuid()}/{LAUNCHAGENT_LABEL}")
+        print(f"would remove plist {plist_path}")
+        return 0
 
     # 2. launchctl bootout gui/<UID>/<LABEL>. The Label is the imported shared
     #    constant (D-85) so bootout ALWAYS targets the exact registration

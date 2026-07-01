@@ -41,6 +41,7 @@ class Paths:
     codex_dir: Path
     config_toml: Path
     moonbridge_yml: Path
+    moonbridge_binary: Path
     models_cache: Path
     zshrc: Path
     launchagents_dir: Path
@@ -57,13 +58,17 @@ class Paths:
 
         The 7 resolved paths (D-22 / D-25):
 
-        - ``codex_dir``       = ``home / ".codex"``
-        - ``config_toml``     = ``home / ".codex" / "config.toml"``
-        - ``moonbridge_yml``  = ``home / ".codex" / "moonbridge-zai.yml"``
-        - ``models_cache``    = ``home / ".codex" / "models_cache.json"``
-        - ``zshrc``           = ``home / ".zshrc"``
-        - ``launchagents_dir``= ``home / "Library" / "LaunchAgents"``
-        - ``backup_dir``      = ``home / ".codex" / ".zai-codex-helper" / "backups"``
+        - ``codex_dir``          = ``home / ".codex"``
+        - ``config_toml``        = ``home / ".codex" / "config.toml"``
+        - ``moonbridge_yml``     = ``home / ".codex" / "moonbridge-zai.yml"``
+        - ``moonbridge_binary``  = ``home / ".codex" / "bin" / "moonbridge``
+          (the built Moon Bridge executable; matches the canonical install
+          path. Historically ``~/.codex/moon-bridge`` was used and the plist
+          ended up pointing at the git-clone DIRECTORY, not the binary.)
+        - ``models_cache``       = ``home / ".codex" / "models_cache.json"``
+        - ``zshrc``              = ``home / ".zshrc"``
+        - ``launchagents_dir``   = ``home / "Library" / "LaunchAgents"``
+        - ``backup_dir``         = ``home / ".codex" / ".zai-codex-helper" / "backups"``
         """
         h = Path(home)
         codex_dir = h / ".codex"
@@ -71,6 +76,7 @@ class Paths:
             codex_dir=codex_dir,
             config_toml=codex_dir / "config.toml",
             moonbridge_yml=codex_dir / "moonbridge-zai.yml",
+            moonbridge_binary=codex_dir / "bin" / "moonbridge",
             models_cache=codex_dir / "models_cache.json",
             zshrc=h / ".zshrc",
             launchagents_dir=h / "Library" / "LaunchAgents",

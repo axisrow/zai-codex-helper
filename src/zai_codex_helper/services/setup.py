@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import getpass
 import os
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -72,7 +73,7 @@ from zai_codex_helper.backends.shell import ShellBackend
 from zai_codex_helper.backends.toml import TomlBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
-from zai_codex_helper.services.diff_preview import compute_diff, redact_secrets
+from zai_codex_helper.services.diff_preview import compute_diff, preview_yml_change
 from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.models_cache import (
     compute_glm52_merged_text,
@@ -86,7 +87,18 @@ from zai_codex_helper.services.providers import (
     check_postconditions,
 )
 
-__all__ = ["run_setup", "SHELL_HELPERS_BODY"]
+__all__ = [
+    "run_setup",
+    "validate_api_key",
+    "canonical_moonbridge_yml",
+    "SHELL_HELPERS_BODY",
+]
+
+
+def canonical_moonbridge_yml(api_key: str) -> dict:
+    """Public alias for :func:`_canonical_moonbridge_yml (reused by set-key)."""
+    return _canonical_moonbridge_yml(api_key)
+
 
 # The canonical Moon Bridge upstream model (PROV-03; the same model
 # apply_zai writes to config.toml, kept here so the YAML body and the TOML
@@ -97,6 +109,43 @@ _ZAI_MODEL = "glm-5.2"
 #: ``127.0.0.1:38440``). Mirrors the provider block's ``base_url`` host/port.
 _MB_HOST = "127.0.0.1"
 _MB_PORT = 38440
+
+#: Z.ai (BigModel) upstream — the REAL Moon Bridge config schema (verified
+#: against ``config.example.yml`` + the user's working yml). The key lives in
+#: ``providers.<name>.api_key`` (NOT a top-level ``ZAI_API_KEY`` — Moon Bridge
+#: rejects that with EX_CONFIG). These constants are the single source so the
+#: canonical body, ``set-key``, and doctor agree.
+_ZAI_PROVIDER_NAME = "zai"
+_ZAI_PROTOCOL = "openai-chat"
+_ZAI_UPSTREAM_BASE_URL = "https://api.z.ai/api/coding/paas/v4/chat/completions"
+_ZAI_USER_AGENT = "moonbridge/1.0"
+
+
+def _canonical_moonbridge_yml(api_key: str) -> dict:
+    """The canonical ``moonbridge-zai.yml`` — a REAL Moon Bridge config body.
+
+    Top-level ``mode`` / ``server`` (NO ``auth_token`` — loopback needs no
+    local auth) / ``providers.zai`` (the Z.ai upstream: protocol, base_url,
+    ``api_key``, user_agent, offers) / ``routes`` / ``models``. This matches
+    Moon Bridge's actual schema; the previous ``{ZAI_API_KEY, model, server}``
+    shape was rejected by Moon Bridge (``field ZAI_API_KEY not found``).
+    """
+    return {
+        "mode": "Transform",
+        "server": {"addr": f"{_MB_HOST}:{_MB_PORT}"},
+        "providers": {
+            _ZAI_PROVIDER_NAME: {
+                "protocol": _ZAI_PROTOCOL,
+                "base_url": _ZAI_UPSTREAM_BASE_URL,
+                "api_key": api_key,
+                "user_agent": _ZAI_USER_AGENT,
+                "offers": [{"model": _ZAI_MODEL}],
+            }
+        },
+        "routes": {_ZAI_MODEL: {"model": _ZAI_MODEL, "provider": _ZAI_PROVIDER_NAME}},
+        "models": {_ZAI_MODEL: {}},
+    }
+
 
 #: The shell-helpers block BODY (D-76 step 4). Written verbatim INSIDE the
 #: ShellBackend marker fence. Minimal by design (D-82): two aliases pointing
@@ -114,6 +163,55 @@ SHELL_HELPERS_BODY = (
 #: The valid provider choices (D-76 step 1). ``"zai"`` is the default on
 #: empty / EOF / invalid input.
 _VALID_PROVIDERS = ("zai", "openai")
+
+#: Z.ai (BigModel) API-key format: ``<32-hex>.<16 Base62>`` — e.g.
+#: ``00000000000000000000000000000000.aaaaaaaaaaaaaaaa``. Both halves are
+#: fixed-width, so this is a strict format check (not a soft heuristic). A
+#: malformed key never reaches ``moonbridge-zai.yml``.
+_ZAI_KEY_RE = re.compile(r"^[0-9a-f]{32}\.[A-Za-z0-9]{16}$")
+
+
+def validate_api_key(key: str) -> None:
+    """Raise :class:`ZaiCodexHelperError` unless ``key`` matches the Z.ai format.
+
+    ``<32-hex>.<16-alnum>`` (BigModel). Empty → "required"; wrong shape →
+    "malformed" with a concrete example so the user sees the expected form.
+    Called after resolving the key (env or input) and BEFORE writing
+    ``moonbridge-zai.yml`` — a garbage key must never be persisted. This is a
+    LOCAL check (no network); a key that parses but is revoked/expired is
+    caught downstream by ``doctor`` (401 from Moon Bridge → check 4/5 fail).
+    """
+    if not key:
+        raise ZaiCodexHelperError("API key is required")
+    if not _ZAI_KEY_RE.match(key):
+        raise ZaiCodexHelperError(
+            "API key is malformed — expected <32-hex>.<16-alnum>, e.g. "
+            "00000000000000000000000000000000.aaaaaaaaaaaaaaaa"
+        )
+
+
+def _prompt_api_key(getpass_fn: Callable[[str], str], *, max_attempts: int = 3) -> str:
+    """Prompt for the Z.ai API key, validating + retrying on malformed input.
+
+    Read via ``getpass`` so the secret is NEVER echoed to the terminal
+    (SECR-01, CLAUDE.md "never echoed/logged"). Up to ``max_attempts`` retries
+    on a validation failure; on the final attempt the
+    :class:`ZaiCodexHelperError` propagates. The retry hint reuses the exact
+    message :func:`validate_api_key` raised, so the format is described in ONE
+    place.
+    """
+    for attempt in range(1, max_attempts + 1):
+        raw = getpass_fn("ZAI API key: ")
+        try:
+            validate_api_key(raw)
+        except ZaiCodexHelperError as e:
+            if attempt == max_attempts:
+                raise
+            print(f"{e}")
+            continue
+        return raw
+    # Unreachable: the loop returns on success or raises on the last attempt.
+    raise ZaiCodexHelperError("API key is required")
 
 
 def run_setup(
@@ -186,8 +284,9 @@ def run_setup(
     # ------------------------------------------------------------------ #
     api_key = environ.get("ZAI_API_KEY")
     if api_key:
-        # Env wins (preferred for automation). Do NOT print/log it.
-        pass
+        # Env wins (preferred for automation). Validate it — a malformed env
+        # key is a config bug, fail fast with an actionable message.
+        validate_api_key(api_key)
     elif yes:
         # D-79: headless + no env → there is no stdin to fall back to. Raise
         # an actionable error naming the env var; let it propagate to main().
@@ -195,43 +294,53 @@ def run_setup(
             "ZAI_API_KEY env not set; pass it or run setup interactively"
         )
     else:
-        # Interactive → getpass (NEVER echoed). SECR-01.
-        api_key = getpass_fn("ZAI API key: ")
-        if not api_key:
-            raise ZaiCodexHelperError("API key is required")
+        # Interactive → getpass (NEVER echoed, SECR-01). The key is a secret;
+        # validate_api_key() inside _prompt_api_key catches a mistyped/wrong-
+        # format key (with retries) before it is written, so hidden entry does
+        # not cost typo-detection.
+        api_key = _prompt_api_key(getpass_fn)
 
     # ------------------------------------------------------------------ #
     # STEP 3 (D-77, SECR-02) — WRITE moonbridge-zai.yml at 0600.
     # ------------------------------------------------------------------ #
-    # Canonical body (mirrors the Phase 9 fixture shape exactly so doctor /
-    # Phase 14 will read what they expect). The key is embedded here but ONLY
-    # routed into YamlBackend.write_canonical — never into print_fn.
-    yml_body = {
-        "ZAI_API_KEY": api_key,
-        "model": _ZAI_MODEL,
-        "server": {"host": _MB_HOST, "port": _MB_PORT},
-    }
-    if dry_run:
-        # D-95: preview the would-be moonbridge-zai.yml as a REAL diff. The
-        # serialized target MUST be REDACTED first (D-77 / SECR-03 / T-15-01)
-        # — the API key value NEVER enters print_fn. redact_secrets() rewrites
-        # the ZAI_API_KEY line to "<redacted>" before compute_diff, so the diff
-        # the user sees exposes the model/server changes without leaking the
-        # secret. serialize with the SAME safe_dump args YamlBackend uses so
-        # the preview matches what a real write would produce byte-for-byte.
-        import yaml
+    # Canonical body — a REAL Moon Bridge config (providers.zai.api_key, NOT a
+    # top-level ZAI_API_KEY which Moon Bridge rejects with EX_CONFIG). The key
+    # is embedded here but ONLY routed into YamlBackend.write_canonical — never
+    # into print_fn.
+    yml_body = _canonical_moonbridge_yml(api_key)
+    # If an existing foreign Moon Bridge config has server.auth_token, Codex
+    # gets 401 (it sends ZAI_API_KEY, Moon Bridge expects the auth_token). Ask
+    # ONCE whether to switch to localhost-only (drop the token). No/declined →
+    # leave the yml untouched + warn; Yes → backup once, then write canonical.
+    from zai_codex_helper.services.api_key import yml_has_auth_token
 
-        serialized = yaml.safe_dump(
-            yml_body,
-            sort_keys=False,
-            default_flow_style=False,
-            allow_unicode=True,
+    _AUTH_TOKEN_PROMPT = (
+        "Moon Bridge has a local auth_token set, which breaks Codex (401). "
+        "Switch Moon Bridge to localhost-only mode (remove the token)?"
+    )
+    yml_backend = YamlBackend(paths)
+    existing = yml_backend.read() if yml_backend.exists() else None
+    if yml_has_auth_token(existing) and not confirm_fn(_AUTH_TOKEN_PROMPT):
+        print_fn(
+            "warning: Moon Bridge auth_token left in place — Codex will likely "
+            "get 401. Remove `server.auth_token` to fix (loopback needs no key)."
         )
-        print_fn(compute_diff(paths.moonbridge_yml, redact_secrets(serialized)))
+    elif dry_run:
+        # D-95: preview the would-be moonbridge-zai.yml as a REDACTED diff (the
+        # key value NEVER reaches print_fn — preview_yml_change redacts via
+        # redact_secrets before compute_diff). Shared with `set-key --dry-run`.
+        preview_yml_change(paths.moonbridge_yml, yml_body, print_fn)
     else:
+        # Back up the original ONCE (sentinel-gated, like config.toml) before
+        # the (possibly foreign) yml is overwritten with the canonical body.
+        # Skip on a fresh install (no existing yml → backup_once raises).
+        if existing is not None:
+            yml_backend.backup_once()
         # D-56: the backend's default mode=0o600 is LOAD-BEARING — pass NO
         # override (SECR-02 / CLAUDE.md "File Permissions").
-        YamlBackend(paths).write_canonical(yml_body)
+        yml_backend.write_canonical(yml_body)
+        if yml_has_auth_token(existing):
+            print_fn("removed server.auth_token — restart Moon Bridge to apply.")
 
     # ------------------------------------------------------------------ #
     # STEP 4 (D-76 step 3, D-69) — BUILD MOON BRIDGE (idempotent).

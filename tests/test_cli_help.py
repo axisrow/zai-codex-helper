@@ -2,8 +2,9 @@
 
 Drive ``python -m zai_codex_helper`` through a real subprocess so the whole
 packaging + entry-point chain is exercised end to end: the console script
-shells out to ``__main__.main``, argparse renders help, and a missing
-subcommand produces argparse's clean exit-2 error instead of a traceback.
+shells out to ``__main__.main``, argparse renders help, and a bare invocation
+(no subcommand) routes to the interactive TUI (which degrades cleanly to a
+one-line error off-TTY instead of a traceback).
 
 These subprocess invocations do not write to ``~/.codex``, so each runs with
 the REAL home restored (via ``_subprocess_env``). This avoids the macOS quirk
@@ -50,11 +51,13 @@ def test_help_exits_zero():
 
 
 @pytest.mark.smoke
-def test_no_subcommand_errors():
-    """No subcommand → non-zero exit (argparse exits 2), no Traceback.
+def test_no_subcommand_opens_tui():
+    """Bare ``zai-codex-helper`` (no subcommand) opens the interactive TUI.
 
-    Guards RESEARCH Pitfall 4: ``required=True`` subparsers yield a clean
-    argparse error + exit 2 rather than an ``AttributeError`` on ``args.func``.
+    The TUI refuses to run without a real terminal, so a piped stdin surfaces
+    the one-line ``error: tui requires a terminal`` + exit 1 (D-11 contract),
+    no traceback. This guards that the bare invocation routes to the TUI
+    default and degrades cleanly off-TTY rather than erroring deep in cbreak.
     """
     result = subprocess.run(
         [sys.executable, "-m", "zai_codex_helper"],
@@ -62,5 +65,6 @@ def test_no_subcommand_errors():
         text=True,
         env=_subprocess_env(),
     )
-    assert result.returncode != 0
+    assert result.returncode == 1
+    assert "tui requires a terminal" in result.stderr
     assert "Traceback" not in result.stderr

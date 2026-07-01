@@ -31,7 +31,7 @@ Canonical state is grounded in the author's real ``~/.codex/config.toml`` and
 
 from __future__ import annotations
 
-from tomlkit import TOMLDocument
+from tomlkit import TOMLDocument, table
 
 from zai_codex_helper.backends.toml import upsert_block
 from zai_codex_helper.errors import ZaiCodexHelperError
@@ -85,6 +85,14 @@ OPENAI_MODEL = "gpt-5.5"
 #: OpenAI revert. Note ``zai-moonbridge`` is NOT in this set (a safe custom id).
 RESERVED_PROVIDER_IDS = frozenset({"openai", "ollama", "lmstudio"})
 
+#: Codex feature toggles to DISABLE when Z.ai is active. These mirror the
+#: ``--disable multi_agent --disable apps`` flags from the user's prior shell
+#: function (verified via Context7: ``--disable <f>`` ≡ ``features.<f>=false`` in
+#: config.toml). Multi-agent/app features assume the OpenAI provider; with the
+#: Z.ai→Moon Bridge proxy they must stay off. Applied surgically (only these two
+#: keys) so the user's other feature prefs are untouched.
+ZAI_DISABLED_FEATURES: dict[str, bool] = {"multi_agent": False, "apps": False}
+
 
 # --------------------------------------------------------------------------- #
 # Desired-state transforms (D-39/D-40/D-41) — pure, symmetric, idempotent.
@@ -120,6 +128,16 @@ def apply_zai(doc: TOMLDocument) -> TOMLDocument:
     doc["model"] = ZAI_MODEL
     doc["model_provider"] = ZAI_PROVIDER_ID
     doc["model_reasoning_effort"] = ZAI_REASONING_EFFORT
+    # Disable the provider-assuming features (multi_agent/apps) — mirrors the
+    # prior `--disable` shell-function flags (verified ≡ features.<f>=false).
+    # Surgical: only these keys; a pre-existing [features] table's other keys
+    # are preserved (setdefault on the table, not a wholesale replace).
+    features = doc.get("features")
+    if not hasattr(features, "__setitem__"):
+        features = table()
+        doc["features"] = features
+    for key, val in ZAI_DISABLED_FEATURES.items():
+        features[key] = val
     return doc
 
 
@@ -150,6 +168,21 @@ def apply_openai(doc: TOMLDocument) -> TOMLDocument:
     doc["model"] = OPENAI_MODEL
     if "model_provider" in doc:
         del doc["model_provider"]
+    # Restore the Z.ai-disabled features to their default (Codex builtin = on).
+    # These features (multi_agent/apps) assume the OpenAI provider; apply_zai
+    # turned them off for the Z.ai→Moon Bridge path, so the revert restores them
+    # — symmetric with model_provider (apply_zai sets, apply_openai removes).
+    # Other feature prefs in [features] are left untouched.
+    features = doc.get("features")
+    if features:
+        for key in ZAI_DISABLED_FEATURES:
+            if key in features:
+                del features[key]
+        # If apply_zai created the [features] table and we just emptied it, drop
+        # the table too — exact-inverse (SC-2) requires apply_openai(apply_zai(d))
+        # == apply_openai(d), so no empty [features] residue on a revert.
+        if not features and "features" in doc:
+            del doc["features"]
     return doc
 
 

@@ -202,26 +202,17 @@ def test_pre_commit_hook_exits_1_on_staged_canary(tmp_path):
         encoding="utf-8",
     )
     # Initialize a throwaway git repo and stage the canary so the hook's
-    # ``git diff --cached --name-only`` lists it.
+    # ``git diff --cached --name-only`` lists it. Staging into a FRESH index
+    # (no prior commit of the same content) is load-bearing: if we committed the
+    # canary first and re-added identical content, the index would equal HEAD and
+    # `git diff --cached` would be EMPTY — the hook would see nothing and exit 0
+    # (a false green that only "passed" where git happened to behave). A single
+    # add of a never-committed canary guarantees it shows up in --cached.
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(
-        ["git", "init", "-q"],
-        cwd=tmp_path,
-        check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "t@t"],
-        cwd=tmp_path,
-        check=True,
+        ["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True
     )
     subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "add", "leaked.py"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
-    # Stage the canary a second time with the secret present so it appears in
-    # --cached (the commit above already consumed the first add).
-    canary.write_text(
-        'KEY = "sk-testFAKEleakedCANARY1234567890ABCDEF"\n',
-        encoding="utf-8",
-    )
     subprocess.run(["git", "add", "leaked.py"], cwd=tmp_path, check=True)
 
     result = subprocess.run(

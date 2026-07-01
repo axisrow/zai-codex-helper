@@ -32,10 +32,14 @@ no-write guarantee, pinned by the byte-identical HOME snapshot tests in
 from __future__ import annotations
 
 import difflib
+import hashlib
 import re
+from collections.abc import Callable
 from pathlib import Path
 
-__all__ = ["compute_diff", "redact_secrets", "NO_CHANGES"]
+import yaml
+
+__all__ = ["compute_diff", "preview_yml_change", "redact_secrets", "NO_CHANGES"]
 
 #: The literal returned by :func:`compute_diff` when the target text equals the
 #: current file text (or both are empty). The dry-run branches print this verbatim
@@ -48,14 +52,15 @@ NO_CHANGES = "(no changes)"
 #: NEVER reaches stdout when the setup dry-run branch previews the yml.
 _REDACTED_PLACEHOLDER = "<redacted>"
 
-#: Regex matching the canonical ``moonbridge-zai.yml`` ``ZAI_API_KEY`` line shape
-#: produced by ``yaml.safe_dump``: ``ZAI_API_KEY: <value>`` (YAML plain scalar;
-#: the value may be quoted or unquoted, and may contain most printable chars).
-#: The match is anchored on the key name + ``:`` so a comment or docstring that
-#: merely MENTIONS ``ZAI_API_KEY`` (without the YAML ``: `` mapping) is NOT
-#: touched (T-15-05 — narrow pattern, no false positive on the env-read name).
+#: Regex matching any line in ``moonbridge-zai.yml`` that carries a secret.
+#: The Z.ai key lives in ``providers.<name>.api_key`` (Moon Bridge's real
+#: schema), but legacy helper versions also wrote a top-level ``ZAI_API_KEY``.
+#: Both must be redacted before a dry-run diff reaches stdout. Matches a YAML
+#: mapping line whose key is ``ZAI_API_KEY`` OR ends with ``api_key`` (catches
+#: the nested ``    api_key: <value>`` under providers). Anchored on ``:`` so a
+#: comment/docstring that merely MENTIONS the name is NOT touched.
 _ZAI_API_KEY_LINE_RE = re.compile(
-    r"^(ZAI_API_KEY:).*$",
+    r"^(\s*(?:ZAI_API_KEY|auth_token|.*api_key):).*$",
     re.MULTILINE,
 )
 
@@ -107,6 +112,16 @@ def compute_diff(path: Path, target_text: str) -> str:
     else:
         current_text = ""
 
+    return _diff_texts(path, current_text, target_text)
+
+
+def _diff_texts(path: Path, current_text: str, target_text: str) -> str:
+    """Diff two in-memory texts (the current/target split of :func:`compute_diff`).
+
+    Extracted so secrets-bearing callers (:func:`preview_yml_change`) can redact
+    BOTH the current and target sides BEFORE diffing — otherwise the removed
+    ``api_key:`` line would leak the user's existing key value (T-15-01).
+    """
     # The (no changes) sentinel: target equals current (byte-for-byte as text).
     # Also covers the empty/empty case (creating an empty file is a no-op).
     if target_text == current_text:
@@ -165,3 +180,100 @@ def redact_secrets(text: str) -> str:
         lambda m: f"{m.group(1)} {_REDACTED_PLACEHOLDER}",
         text,
     )
+
+
+#: Mapping keys whose VALUE is a secret and must be fingerprint-redacted before
+#: a dry-run diff is printed. ``api_key`` matches the nested
+#: ``providers.<name>.api_key``; ``ZAI_API_KEY`` is the legacy top-level form;
+#: ``auth_token`` is Moon Bridge's loopback token (a foreign yml may carry it).
+_SECRET_KEYS = frozenset({"api_key", "zai_api_key", "auth_token"})
+
+
+def _fingerprint(value: object) -> str:
+    """Non-reversible ``<redacted:XXXXXXXX>`` fingerprint (first 8 hex of sha256).
+
+    A genuine key CHANGE stays visible (different fingerprints → a diff line)
+    while the real value never reaches stdout. 32 bits is ample to distinguish
+    two keys in a preview; it is not a security boundary (the value is gone).
+    """
+    digest = hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:8]
+    return f"{_REDACTED_PLACEHOLDER[:-1]}:{digest}>"
+
+
+def _redact_secret_nodes(data: object) -> object:
+    """Recursively replace secret VALUES with a fingerprint at the NODE level (T-15-01).
+
+    Node-level (not line-level) is load-bearing: a line regex cannot redact a
+    multi-line YAML scalar (a block ``api_key: |`` or a quoted value that
+    ``safe_dump`` wraps across lines) — the continuation lines carry the raw
+    secret. Redacting the parsed VALUE before ``safe_dump`` guarantees the
+    serialized form is a single ``<redacted:...>`` scalar regardless of how the
+    source encoded it. Returns a redacted deep copy; the input is not mutated.
+    """
+    if isinstance(data, dict):
+        return {
+            k: (
+                _fingerprint(v)
+                if isinstance(k, str) and k.lower() in _SECRET_KEYS
+                else _redact_secret_nodes(v)
+            )
+            for k, v in data.items()
+        }
+    if isinstance(data, list):
+        return [_redact_secret_nodes(item) for item in data]
+    return data
+
+
+def _redact_yaml(text: str) -> str:
+    """Parse ``text`` as YAML, fingerprint every secret node, re-serialize.
+
+    Collapses any foreign encoding (block scalar, quoted key, multi-line value)
+    to canonical inline YAML with the secret already replaced — so no raw secret
+    can survive to the diff. Empty text → empty (nothing to redact).
+    """
+    if not text:
+        return ""
+    loaded = yaml.safe_load(text)
+    redacted = _redact_secret_nodes(loaded)
+    return yaml.safe_dump(
+        redacted,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )
+
+
+def preview_yml_change(
+    path: Path,
+    body: dict,
+    print_fn: Callable[..., None],
+) -> None:
+    """Print a REDACTED unified diff of the would-be ``moonbridge-zai.yml`` write.
+
+    The single shared dry-run-preview path for every yml-mutating command
+    (``setup`` step 3, ``set-key``). Serializes ``body`` with the
+    CLAUDE.md-canonical ``yaml.safe_dump`` args (matching what
+    :meth:`YamlBackend.write_canonical` produces byte-for-byte), redacts the
+    ``ZAI_API_KEY`` value via :func:`redact_secrets`, computes the diff against
+    the on-disk file via :func:`compute_diff`, and prints it. The key value
+    NEVER reaches stdout.
+    """
+    # Redact BOTH sides at the NODE level before diffing (T-15-01 / SECR-03).
+    # The diff shows the CURRENT on-disk yml against the would-be write, so a
+    # removed `api_key:`/`auth_token:` line would otherwise carry the user's
+    # EXISTING real secret. _redact_yaml parses each side, fingerprints every
+    # secret VALUE, and re-serializes — so neither the old nor the new value
+    # (nor a foreign block-scalar / quoted / multi-line encoding of it) can
+    # reach stdout. The fingerprint is a non-reversible sha256 prefix, so a
+    # genuine key CHANGE still surfaces as a diff line (`<redacted:ab12cd34>` →
+    # `<redacted:99ff00aa>`) instead of collapsing to a misleading "(no changes)".
+    # No new crash path: both callers already safe_load the current file before
+    # preview, so a malformed yml has already raised upstream.
+    redacted_target = _redact_yaml(
+        yaml.safe_dump(
+            body, sort_keys=False, default_flow_style=False, allow_unicode=True
+        )
+    )
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
+    redacted_current = _redact_yaml(current)
+    print_fn(_diff_texts(path, redacted_current, redacted_target))

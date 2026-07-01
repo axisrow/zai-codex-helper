@@ -91,9 +91,9 @@ def canonical_plist(paths: Paths) -> dict[str, Any]:
         ``plistlib.dumps(..., fmt=plistlib.FMT_XML)``.
     """
     # ABSOLUTE resolved binary path — the built-binary invocation target
-    # (CLAUDE.md "LaunchAgent Management": point at ``~/.codex/moon-bridge``,
+    # (CLAUDE.md "LaunchAgent Management": point at the Moon Bridge executable,
     # NOT ``go run``). NO literal ``~`` — launchd does not expand it.
-    binary_path = str(paths.codex_dir / "moon-bridge")
+    binary_path = str(paths.moonbridge_binary)
     # ABSOLUTE resolved config path — ``~/.codex/moonbridge-zai.yml``. NO
     # literal ``~``.
     config_path = str(paths.moonbridge_yml)

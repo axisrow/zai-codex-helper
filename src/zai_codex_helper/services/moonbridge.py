@@ -189,7 +189,7 @@ def build_moonbridge(
             or if any runner call (clone / checkout / build) fails (D-69 step
             3-4 wrapping). The clone tempdir is cleaned up in all cases.
     """
-    binary = paths.codex_dir / "moon-bridge"
+    binary = paths.moonbridge_binary
 
     # D-69 step 1 / D-72 — idempotency: skip the build entirely if a usable
     # binary already exists and the caller did not request a rebuild. Reuses
@@ -203,8 +203,8 @@ def build_moonbridge(
     _assert_go_ready()
 
     # D-69 step 3 prep — ensure the output directory exists (Paths is pure and
-    # does not create directories, D-22).
-    paths.codex_dir.mkdir(parents=True, exist_ok=True)
+    # does not create directories, D-22). The binary lives in ~/.codex/bin/.
+    binary.parent.mkdir(parents=True, exist_ok=True)
 
     # D-69 steps 3-6 — clone at the pinned SHA, build, chmod, cleanup. The
     # TemporaryDirectory context guarantees the clone is removed on success OR

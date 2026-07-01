@@ -10,9 +10,14 @@ config at the destination and never orphans a temp file (T-03-01, T-03-05).
 
 Mode contract:
 
-- ``mode=None`` → do NOT chmod; the destination keeps the tempfile's umask-governed
-  mode or, on overwrite, the pre-existing destination's mode (the ``config.toml``
-  branch — CLAUDE.md "preserve existing mode").
+- ``mode=None`` → do NOT chmod; the destination inherits the tempfile's mode.
+  ``tempfile.NamedTemporaryFile`` (via ``mkstemp``) creates at ``0o600``
+  UMASK-INDEPENDENTLY, and ``os.replace`` preserves that onto the destination —
+  so a ``mode=None`` write lands at ``0o600``, NOT a umask-governed mode. (The
+  ``config.toml`` branch uses this; it is more restrictive than the file's prior
+  mode, which is acceptable — never a widening. Secrets still pass an EXPLICIT
+  ``0o600`` rather than relying on this, so a future tempfile change cannot
+  silently widen them.)
 - ``mode=0o600`` → ``os.chmod(path, 0o600)`` AFTER the successful replace (the
   secrets branch — CLAUDE.md File Permissions table; the single mechanism by
   which ``moonbridge-zai.yml`` lands restricted).

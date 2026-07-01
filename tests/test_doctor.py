@@ -198,18 +198,19 @@ def test_full_chain_all_pass_returns_zero(tmp_path, monkeypatch, httpserver, cap
 
     out = capsys.readouterr().out
     assert rc == 0
-    # The 9-check names appear in order; Codex Desktop (darwin only) may
-    # follow. Match the documented chain.
+    # The 7-check names appear in order; POST is LAST (slow probe); Codex
+    # Desktop (darwin only) may follow. Match the documented chain.
+    # (models_cache is NOT checked — it's Codex's OpenAI catalog, glm-5.2 never
+    # lands there; GET /v1/models is the real availability proof.)
     expected_chain = [
         "Moon Bridge binary",
         "moonbridge-zai.yml",
         "Port 127.0.0.1:38440",
         "GET /v1/models",
-        "POST /v1/responses",
-        "models_cache.json",
         "current default",
         "LaunchAgent loaded",
         "key file mode",
+        "POST /v1/responses",
     ]
     offsets = [out.find(name) for name in expected_chain]
     assert all(o >= 0 for o in offsets), f"missing names: {expected_chain!r}"
@@ -242,11 +243,10 @@ def test_chain_order_by_check_names(tmp_path, monkeypatch, httpserver, capsys):
         "moonbridge-zai.yml",
         "Port 127.0.0.1:38440",
         "GET /v1/models",
-        "POST /v1/responses",
-        "models_cache.json",
         "current default",
         "LaunchAgent loaded",
         "key file mode",
+        "POST /v1/responses",
     ]
     last = -1
     for name in names:
@@ -358,8 +358,9 @@ def test_http_probe_fails_fast_on_slow_endpoint(
     _redirect_to_httpserver(monkeypatch, httpserver)
 
     def _slow_handler(req):
-        # Sleep longer than doctor._HTTP_TIMEOUT so the hard timeout fires.
-        time.sleep(doctor._HTTP_TIMEOUT + 1.5)
+        # Sleep longer than the short read timeout (1.0s, set on the client
+        # below) so the hard timeout fires.
+        time.sleep(2.5)
         return httpserver.Response("ok", status=200)
 
     httpserver.expect_request("/v1/models", method="GET").respond_with_handler(
@@ -405,7 +406,7 @@ def test_http_probe_fails_fast_on_slow_endpoint(
 def test_codex_desktop_running_is_warn_on_darwin(
     tmp_path, monkeypatch, httpserver, capsys
 ):
-    """On darwin, pgrep -x Codex non-empty stdout → WARN (not fail) (D-91)."""
+    """On darwin, pgrep -f <Codex pattern> non-empty stdout → WARN (not fail) (D-91)."""
     _seed_full_pass_state(tmp_path)
     paths = Paths.from_home(tmp_path)
     _patch_port(monkeypatch, connects=True)
@@ -724,3 +725,138 @@ def test_run_doctor_runner_seam_drives_pgrep_and_launchctl(
     assert all(c["argv"][0] in {"launchctl", "pgrep"} for c in captured), (
         f"unexpected subprocess call: {captured!r}"
     )
+
+
+@pytest.mark.unit
+def test_doctor_fails_and_probes_unauthenticated_when_yml_has_auth_token(
+    tmp_path, monkeypatch, httpserver
+):
+    """A foreign yml with ``server.auth_token`` → doctor FAILS and probes WITHOUT the token.
+
+    Codex sends ``ZAI_API_KEY``, not Moon Bridge's ``server.auth_token``, so an
+    ``auth_token`` means the real Codex path 401s. doctor must diagnose that (a
+    FAIL) and probe EXACTLY as Codex does — no ``Authorization`` header — rather
+    than authenticating with the token and masking the 401 with a green probe.
+
+    Regression: doctor used to send ``Bearer <auth_token>`` on its probes and
+    report exit 0 on a config Codex cannot actually use.
+    """
+    _seed_full_pass_state(tmp_path)
+    # Overwrite the yml with a FOREIGN config that sets server.auth_token.
+    (tmp_path / ".codex" / "moonbridge-zai.yml").write_text(
+        "providers:\n"
+        "  zai:\n"
+        "    api_key: 11111111111111111111111111111111.aaaaaaaaaaaaaaaa\n"
+        "server:\n"
+        "  addr: 127.0.0.1:38440\n"
+        "  auth_token: sk-moonbridge-zai-local\n"
+    )
+    paths = Paths.from_home(tmp_path)
+    _patch_port(monkeypatch, connects=True)
+    _redirect_to_httpserver(monkeypatch, httpserver)
+    # Probes must arrive WITHOUT any Authorization header (Codex-equivalent).
+    # Respond 200 so the ONLY thing that can fail is the auth_token check.
+    seen_auth_headers = []
+
+    def _capture(req):
+        from werkzeug.wrappers import Response
+
+        seen_auth_headers.append(req.headers.get("Authorization"))
+        return Response('{"data": []}', status=200)
+
+    httpserver.expect_request("/v1/models", method="GET").respond_with_handler(
+        _capture
+    )
+    httpserver.expect_request("/v1/responses", method="POST").respond_with_handler(
+        _capture
+    )
+
+    with _client_for(httpserver) as client:
+        rc = run_doctor(paths, http_client=client, runner=_recording_runner()[0])
+
+    # auth_token present → doctor FAILS (exit 1), even though the probes got 200.
+    assert rc == 1
+    # And the probes carried NO Authorization header (probed as Codex does).
+    assert seen_auth_headers  # probes actually ran
+    assert all(h is None for h in seen_auth_headers), seen_auth_headers
+
+
+@pytest.mark.unit
+def test_doctor_check_auth_token_none_for_canonical_yml(tmp_path):
+    """Canonical helper yml (no auth_token) → _check_auth_token returns None."""
+    _seed_full_pass_state(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    assert doctor._check_auth_token(paths) is None
+
+
+@pytest.mark.unit
+def test_post_check_runner_abort_returns_warn(
+    tmp_path, monkeypatch, httpserver, capsys
+):
+    """When post_check_runner returns None (aborted), POST → warn 'interrupted'.
+
+    doctor exit 0 (WARN doesn't fail), the rendered line names the interrupt.
+
+    The HTTP/port probes MUST be isolated (mocked port + httpserver-redirected
+    GET) — otherwise the GET /v1/models and port checks hit the real
+    127.0.0.1:38440 and FAIL wherever no Moon Bridge is listening (e.g. CI),
+    making doctor exit 1 for reasons unrelated to the abort under test. Without
+    this, the test only passes on a box that happens to be running Moon Bridge.
+    """
+    _seed_full_pass_state(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    _patch_port(monkeypatch, connects=True)
+    _redirect_to_httpserver(monkeypatch, httpserver)
+    httpserver.expect_request("/v1/models", method="GET").respond_with_data(
+        '{"data": []}', status=200, content_type="application/json"
+    )
+    runner, _ = _recording_runner(
+        responses=[
+            ("launchctl", _ok(["launchctl"], stdout="pid=1\n")),
+            ("pgrep", _ok(["pgrep"], stdout="")),
+        ]
+    )
+
+    def _aborting_runner(_call):
+        return None  # simulate Esc/Ctrl-C abort
+
+    with _client_for(httpserver) as client:
+        rc = run_doctor(
+            paths,
+            http_client=client,
+            runner=runner,
+            post_check_runner=_aborting_runner,
+        )
+    out = capsys.readouterr().out
+    assert rc == 0  # WARN, not FAIL
+    assert "interrupted" in out
+
+
+@pytest.mark.unit
+def test_run_with_spinner_returns_call_result():
+    """run_with_spinner runs call() in a thread and returns its CheckResult."""
+    sentinel = doctor.CheckResult(
+        name="POST /v1/responses", verdict="pass", detail="200 OK", fix_hint=""
+    )
+    result = doctor.run_with_spinner(
+        lambda: sentinel, should_abort=lambda: False, interval=0.01
+    )
+    assert result is sentinel
+
+
+@pytest.mark.unit
+def test_run_with_spinner_abort_returns_none():
+    """When should_abort() fires before call() finishes, run_with_spinner → None."""
+    import threading as _t
+
+    done = _t.Event()
+
+    def slow_call():
+        done.wait(timeout=5)  # never finishes on its own
+        return doctor.CheckResult("x", "pass", "y", "")
+
+    result = doctor.run_with_spinner(
+        slow_call, should_abort=lambda: True, interval=0.01
+    )
+    done.set()  # release the worker so the test process can exit cleanly
+    assert result is None

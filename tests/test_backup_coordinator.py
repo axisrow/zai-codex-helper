@@ -71,7 +71,7 @@ def test_backup_once_first_call_copies_and_creates_sentinel(tmp_path):
     BackupCoordinator.backup_once(paths, backend)
 
     bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
-    sentinel = paths.codex_dir / SENTINEL_NAME
+    sentinel = paths.codex_dir / (paths.config_toml.name + SENTINEL_NAME)
 
     assert bak.exists()
     assert bak.read_bytes() == b"ORIGINAL"
@@ -95,7 +95,7 @@ def test_backup_once_second_call_is_noop(tmp_path):
     _seed_config(paths, b"ORIGINAL")
     backend = _PathOnly(paths.config_toml)
     bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
-    sentinel = paths.codex_dir / SENTINEL_NAME
+    sentinel = paths.codex_dir / (paths.config_toml.name + SENTINEL_NAME)
 
     BackupCoordinator.backup_once(paths, backend)
     assert sentinel.exists()
@@ -125,9 +125,11 @@ def test_backup_once_sentinel_only_short_circuits(tmp_path):
     backend = _PathOnly(paths.config_toml)
     bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
 
-    # Pre-create ONLY the sentinel.
+    # Pre-create ONLY this file's sentinel.
     paths.codex_dir.mkdir(parents=True, exist_ok=True)
-    (paths.codex_dir / SENTINEL_NAME).write_bytes(b"backed-up\n")
+    (paths.codex_dir / (paths.config_toml.name + SENTINEL_NAME)).write_bytes(
+        b"backed-up\n"
+    )
 
     BackupCoordinator.backup_once(paths, backend)
 
@@ -160,6 +162,143 @@ def test_backup_once_bak_is_sibling_not_in_backup_dir(tmp_path):
     assert not str(expected_bak).startswith(str(paths.backup_dir))
     # backup_dir is never written in Phase 4 (D-28).
     assert not paths.backup_dir.exists()
+
+
+# --------------------------------------------------------------------------- #
+# T4a2 — never clobber an existing .bak on the per-file-sentinel upgrade path
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_backup_once_never_clobbers_existing_bak(tmp_path):
+    """Upgrade path: an existing ``.bak`` is preserved, sentinel is (re)written.
+
+    Regression: the sentinel migrated from a GLOBAL gate to a PER-FILE gate, but
+    the ``.bak`` filename is unchanged. A user who ran the OLD version has the
+    ORIGINAL ``.bak`` + a live config.toml already MUTATED, but only the OLD
+    global sentinel (which the new per-file check does not recognize). Without a
+    guard, backup_once would re-copy the MUTATED live file over the good ``.bak``
+    — destroying the only rollback copy. The guard adopts the existing ``.bak``
+    untouched and just (re)writes the per-file sentinel.
+    """
+    paths = Paths.from_home(tmp_path)
+    # Live file is already the MUTATED state (old version ran + patched it).
+    _seed_config(paths, b"MUTATED_BY_OLD_VERSION")
+    backend = _PathOnly(paths.config_toml)
+    bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
+    sentinel = paths.codex_dir / (paths.config_toml.name + SENTINEL_NAME)
+
+    # The ORIGINAL .bak from the old version — must NOT be clobbered.
+    paths.codex_dir.mkdir(parents=True, exist_ok=True)
+    bak.write_bytes(b"ORIGINAL_PRE_MUTATION")
+    # Only the OLD global sentinel exists (per-file sentinel absent).
+    (paths.codex_dir / SENTINEL_NAME).write_bytes(b"backed-up\n")
+    assert not sentinel.exists()
+
+    BackupCoordinator.backup_once(paths, backend)
+
+    # The good original .bak survives (NOT overwritten with the mutated live).
+    assert bak.read_bytes() == b"ORIGINAL_PRE_MUTATION"
+    # The per-file sentinel is now written so future runs short-circuit.
+    assert sentinel.exists()
+
+
+# --------------------------------------------------------------------------- #
+# T4c — the secrets .bak must be 0600 (holds the same spendable key)
+# --------------------------------------------------------------------------- #
+def _seed_secret_yml(paths: Paths, content: bytes = b"api_key: SECRET\n") -> None:
+    """Write ``content`` to ``paths.moonbridge_yml`` at 0600 (the secrets file)."""
+    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
+    paths.moonbridge_yml.write_bytes(content)
+    import os
+
+    os.chmod(paths.moonbridge_yml, 0o600)
+
+
+@pytest.mark.unit
+def test_backup_once_new_secret_bak_is_0600(tmp_path):
+    """A freshly created .bak of moonbridge-zai.yml is 0600 (explicit, not by luck).
+
+    The .bak holds the same spendable Z.ai key as the live yml, so a
+    world-readable .bak is a key leak. The secrets path passes an EXPLICIT
+    0o600 rather than relying on the tempfile default.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_secret_yml(paths)
+    backend = _PathOnly(paths.moonbridge_yml)
+
+    BackupCoordinator.backup_once(paths, backend)
+
+    bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
+    assert bak.exists()
+    assert (bak.stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.unit
+def test_backup_once_tightens_adopted_world_readable_secret_bak(tmp_path):
+    """An adopted pre-existing 0644 secrets .bak is chmod'd down to 0600.
+
+    Regression: a user with an old/manual world-readable
+    moonbridge-zai.yml.zai-codex-helper.bak (same key inside) — the never-clobber
+    guard adopts it, but must not leave the key world-readable.
+    """
+    import os
+
+    paths = Paths.from_home(tmp_path)
+    _seed_secret_yml(paths)
+    backend = _PathOnly(paths.moonbridge_yml)
+    bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
+    # A pre-existing world-readable .bak holding the key.
+    bak.write_bytes(b"api_key: OLD_SECRET\n")
+    os.chmod(bak, 0o644)
+
+    BackupCoordinator.backup_once(paths, backend)
+
+    # Adopted (content untouched) BUT tightened to 0600.
+    assert bak.read_bytes() == b"api_key: OLD_SECRET\n"
+    assert (bak.stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.unit
+def test_backup_once_rejects_symlinked_secret_bak(tmp_path):
+    """A symlinked secrets .bak is refused (write/chmod-redirect gadget)."""
+    paths = Paths.from_home(tmp_path)
+    _seed_secret_yml(paths)
+    backend = _PathOnly(paths.moonbridge_yml)
+    bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
+    # Plant a symlink where the .bak would go.
+    target = tmp_path / "elsewhere"
+    target.write_bytes(b"x")
+    bak.symlink_to(target)
+
+    with pytest.raises(ZaiCodexHelperError):
+        BackupCoordinator.backup_once(paths, backend)
+
+
+# --------------------------------------------------------------------------- #
+# T4b — per-file gate: one file's backup does NOT starve another's (regression)
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_backup_once_per_file_gate_is_independent(tmp_path):
+    """Backing up the yml must NOT no-op a later config.toml backup.
+
+    Regression: the sentinel used to be a single GLOBAL gate under codex_dir,
+    so the first backup_once (e.g. an existing moonbridge-zai.yml during setup)
+    consumed it and every later config.toml backup became a no-op — leaving
+    config.toml rewritten with NO restorable .bak. The gate is now per-file.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_config(paths, b"CONFIG")
+    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
+    paths.moonbridge_yml.write_bytes(b"YML")
+
+    # Back up the yml FIRST (mirrors setup seeing an existing yml).
+    BackupCoordinator.backup_once(paths, _PathOnly(paths.moonbridge_yml))
+    # Then back up config.toml — must still produce its own .bak.
+    BackupCoordinator.backup_once(paths, _PathOnly(paths.config_toml))
+
+    yml_bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
+    cfg_bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
+    assert yml_bak.read_bytes() == b"YML"
+    assert cfg_bak.read_bytes() == b"CONFIG"  # NOT starved by the yml backup
 
 
 # --------------------------------------------------------------------------- #

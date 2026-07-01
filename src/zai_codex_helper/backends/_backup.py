@@ -29,6 +29,7 @@ the injected :class:`Paths` and a backend whose ``.path`` is the source.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from zai_codex_helper.backends._atomic import atomic_write
@@ -58,7 +59,8 @@ class BackupCoordinator:
       present (D-11 one-line message; Plan 04-02's CLI path formats it).
 
     The coordinator never re-resolves paths: the sentinel lives at
-    ``paths.codex_dir / SENTINEL_NAME`` and the ``.bak`` is
+    ``paths.codex_dir / (backend.path.name + SENTINEL_NAME)`` (PER-FILE, so
+    each source has its own one-shot gate) and the ``.bak`` is
     ``backend.path.parent / (backend.path.name + BAK_SUFFIX)`` (always a
     sibling under the injected home — T-04-04).
     """
@@ -70,10 +72,11 @@ class BackupCoordinator:
         Load-bearing order (T-04-01: the sentinel check MUST be the very
         first IO, before any copy, so a re-run cannot re-copy):
 
-        1. Resolve the sentinel off ``paths.codex_dir`` (never hard-code
-           ``~/.codex``).
-        2. If the sentinel already exists, return immediately — the user
-           is already backed up and this run is a no-op (does NOT copy,
+        1. Resolve the PER-FILE sentinel off ``paths.codex_dir`` (never
+           hard-code ``~/.codex``), keyed by the source file name so each
+           file has an independent gate.
+        2. If this file's sentinel already exists, return immediately —
+           it is already backed up and this run is a no-op (does NOT copy,
            does NOT overwrite the ``.bak``, leaves the sentinel in place).
         3. Read ``backend.path`` (the source file).
         4. If the source does not exist, raise
@@ -100,12 +103,17 @@ class BackupCoordinator:
             backend: A :class:`ConfigBackend` whose ``.path`` is the
                 source file to back up.
         """
-        sentinel = paths.codex_dir / SENTINEL_NAME
+        # Per-file sentinel: each source file has its own one-shot gate, so
+        # backing up moonbridge-zai.yml does NOT gate-starve config.toml's
+        # backup (they are independent files with independent .bak siblings).
+        # A shared global sentinel would let the first backup_once no-op every
+        # later one, rewriting config.toml with no restorable .bak.
+        src: Path = backend.path
+        sentinel = paths.codex_dir / (src.name + SENTINEL_NAME)
         if sentinel.exists():
-            # Idempotency gate (D-27): already backed up — no-op.
+            # Idempotency gate (D-27): this file already backed up — no-op.
             return
 
-        src: Path = backend.path
         if not src.exists():
             # Nothing to back up (D-11): surface the problem, do NOT
             # silently create an empty .bak.
@@ -116,9 +124,41 @@ class BackupCoordinator:
 
         # D-28: sibling .bak, NOT inside paths.backup_dir.
         bak = src.parent / (src.name + BAK_SUFFIX)
-        # Crash-safe copy via the Phase 3 primitive (CONF-01). mode=None
-        # preserves the source's existing mode (CLAUDE.md config.toml).
-        atomic_write(bak, src.read_bytes(), mode=None)
+
+        # The .bak of the secrets file (moonbridge-zai.yml) holds the SAME
+        # spendable Z.ai key, so it MUST be 0600 too — a world-readable .bak is
+        # a key leak just like a world-readable live file. Non-secret files
+        # (config.toml) keep mode=None. Resolve the secret mode by identity with
+        # the injected secrets path (not a filename guess elsewhere in the tree).
+        secret = src == paths.moonbridge_yml
+        bak_mode = 0o600 if secret else None
+
+        # Reject a symlinked .bak for the secrets file: following it would let a
+        # pre-planted symlink redirect the key copy (or a later chmod) onto an
+        # attacker-chosen path outside ~/.codex (a write/chmod-redirect gadget).
+        if secret and bak.is_symlink():
+            raise ZaiCodexHelperError(
+                f"refusing to back up over a symlinked {bak.name} "
+                "(remove it and re-run)"
+            )
+
+        # NEVER clobber an existing .bak. The .bak is a one-shot snapshot of the
+        # user's ORIGINAL (pre-mutation) file. If one already exists (e.g. a user
+        # who ran an OLD version with the GLOBAL sentinel, which the per-file gate
+        # above does not recognize), re-copying the now-MUTATED source over it
+        # would destroy the only rollback copy. Adopt the existing .bak, just
+        # (re)write the per-file sentinel so future runs short-circuit here.
+        if not bak.exists():
+            # Crash-safe copy via the Phase 3 primitive (CONF-01). For the
+            # secrets file, pass an EXPLICIT 0600 — do NOT rely on the temp
+            # file's default mode (fragile: a doc/impl change could regress it
+            # to a world-readable .bak).
+            atomic_write(bak, src.read_bytes(), mode=bak_mode)
+        elif secret:
+            # Adopted an existing .bak of the secrets file: it may predate this
+            # hardening (e.g. an old/manual 0644 backup still holding the key).
+            # Tighten it to 0600 so the adopted copy is not a lingering leak.
+            os.chmod(bak, 0o600)
 
         # Sentinel: existence is the gate. atomic_write (not plain touch)
         # so a crash between copy and sentinel still leaves a consistent

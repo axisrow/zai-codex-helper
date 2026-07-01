@@ -127,7 +127,7 @@ def test_full_subclass_instantiates_and_runs(tmp_path):
     backend.backup_once()
 
     bak = backend.path.parent / (backend.path.name + BAK_SUFFIX)
-    sentinel = paths.codex_dir / SENTINEL_NAME
+    sentinel = paths.codex_dir / (backend.path.name + SENTINEL_NAME)
     assert bak.read_bytes() == b"hello"
     assert sentinel.exists()
 

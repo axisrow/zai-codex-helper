@@ -7,19 +7,25 @@ colored verdict (``[✓]`` / ``[!]`` / ``[✗]``) plus an indented ``To fix:``
 hint for every non-pass check. It exits ``0`` unless at least one check FAILS
 (``✗``); WARN (``!``) alone yields exit ``0``.
 
-The ordered 9-check chain (DIAG-01, D-89):
+The ordered 7-check chain (DIAG-01, D-89) — the slow POST probe runs LAST so
+the fast checks render before the user waits on Z.ai:
 
   1. Moon Bridge binary   — reuse Phase 10 :func:`detect_moonbridge_binary`.
   2. ``moonbridge-zai.yml`` parseable — Phase 9 :class:`YamlBackend.read`.
   3. Port ``127.0.0.1:38440`` open — stdlib ``socket.create_connection`` probe
      (mirrors the Phase 13 post-install verify port half).
   4. ``GET /v1/models`` — httpx GET through a SINGLE hard-timeout client.
-  5. ``POST /v1/responses`` (``glm-5.2``) — httpx POST, same client.
-  6. ``models_cache.json`` — Phase 9 :class:`JsonBackend.read` (READ ONLY).
-  7. current default — Phase 8 :func:`detect_provider` (``is_zai``?).
-  8. LaunchAgent loaded — Phase 13 :func:`verify_service_loaded` (launchctl
+  5. current default — Phase 8 :func:`detect_provider` (``is_zai``?).
+  6. LaunchAgent loaded — Phase 13 :func:`verify_service_loaded` (launchctl
      half only; the port half is already covered by check 3).
-  9. key ``0600`` — ``stat.S_IMODE(os.stat(paths.moonbridge_yml).st_mode)``.
+  7. key ``0600`` — ``stat.S_IMODE(os.stat(paths.moonbridge_yml).st_mode)``.
+  8. ``POST /v1/responses`` (``glm-5.2``) — httpx POST, LAST: the slow upstream
+     round-trip (3–20s) runs after every fast check, behind a spinner that the
+     user can interrupt (Esc in TUI / Ctrl-C in CLI) → WARN, not FAIL.
+
+(`models_cache.json` is NOT checked: it is Codex's OpenAI-model catalog, which
+the app-server overwrites on fetch — glm-5.2 never lands there by design. The
+``GET /v1/models`` probe on Moon Bridge is the real availability proof.)
 
 Plus the Codex Desktop detection (D-91, DIAG-03): a separate ``pgrep -x Codex``
 check invoked ONLY on darwin. When Codex Desktop is running it emits a WARN
@@ -66,6 +72,7 @@ import socket
 import stat
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -97,17 +104,31 @@ _MOONBRIDGE_PORT = 38440
 #: ``_PORT_PROBE_TIMEOUT`` — the probe must fail fast rather than hang doctor.
 _PORT_PROBE_TIMEOUT = 3.0
 
-#: HARD timeout (connect + read, seconds) for BOTH httpx probes (D-90, DIAG-02).
-#: A hung/stuck Moon Bridge cannot stall doctor — the probe fails fast and is
-#: reported as a ``✗`` (threat T-14-02). Short enough to not stall, long enough
-#: for a local proxy.
-_HTTP_TIMEOUT = 5.0
+#: GRANULAR httpx timeouts for BOTH probes (D-90, DIAG-02). A single float
+#: would apply one ceiling to connect+read+write+pool; the Z.ai Responses-API
+#: (POST /v1/responses) legitimately takes ~8s with reasoning, so a 5s read
+#: ceiling produced a false "timed out". Split: a SHORT connect (a hung Moon
+#: Bridge still fails fast — threat T-14-02) + a LONGER read (a real upstream
+#: round-trip is allowed to finish).
+_HTTP_CONNECT_TIMEOUT = 5.0
+_HTTP_READ_TIMEOUT = 90.0
+_HTTP_TIMEOUT = httpx.Timeout(
+    connect=_HTTP_CONNECT_TIMEOUT,
+    read=_HTTP_READ_TIMEOUT,
+    write=5.0,
+    pool=5.0,
+)
 
-#: The Codex Desktop process name pgrep looks for (D-91). Exact match via
-#: ``pgrep -x`` — a process literally named "Codex" is treated as Codex
-#: Desktop (threat T-14-05: false positive is harmless because the check is a
-#: WARN, never a fail).
-_CODEX_DESKTOP_PROCESS = "Codex"
+#: Codex-process cmdline patterns to detect a running Codex (D-91). The Desktop
+#: app launches ``/Applications/Codex.app/...``; the CLI runs ``codex
+#: app-server``; the Claude Code plugin runs ``codex app-server-broker``.
+#: ``pgrep -x Codex`` missed all of these (the process is named ``node_repl`` /
+#: ``codex`` / ``node``, not ``Codex``) → a false "not running". Match against
+#: the FULL cmdline via ``pgrep -f``. False positive is harmless (WARN, D-91).
+_CODEX_PROCESS_PATTERNS: tuple[str, ...] = (
+    "Codex.app",
+    "codex app-server",
+)
 
 # --------------------------------------------------------------------------- #
 # ANSI color helpers (D-92, CLAUDE.md D-04/D-05 — manual, NO Rich).
@@ -288,12 +309,50 @@ def _check_port_open() -> CheckResult:
     )
 
 
-def _check_get_models(client: httpx.Client) -> CheckResult:
+def _check_auth_token(paths: Paths) -> CheckResult | None:
+    """Diagnose ``server.auth_token`` in ``moonbridge-zai.yml`` (None if absent).
+
+    Codex authenticates with ``ZAI_API_KEY`` (the provider block's
+    ``env_key``), NOT with Moon Bridge's ``server.auth_token``. So if the
+    (foreign) yml sets ``auth_token``, Moon Bridge will reject Codex's real
+    requests with 401 — the exact break ``setup``/``set-key`` warn about.
+
+    doctor must therefore probe the chain EXACTLY as Codex does (no
+    ``auth_token`` header) and report a present ``auth_token`` as a FAIL, not
+    silently authenticate with it and turn the probe green (which would mask
+    the broken user-visible path). Returns a FAIL ``CheckResult`` when an
+    ``auth_token`` is set, else None (nothing to report — canonical helper yml
+    has none; loopback needs none).
+    """
+    backend = YamlBackend(paths)
+    if not backend.exists():
+        return None
+    data = backend.read()
+    if not isinstance(data, dict):
+        return None
+    server = data.get("server", {})
+    if not isinstance(server, dict):
+        return None
+    token = server.get("auth_token")
+    if not (isinstance(token, str) and token):
+        return None
+    return CheckResult(
+        name="Moon Bridge auth_token",
+        verdict="fail",
+        detail="server.auth_token is set — Codex sends ZAI_API_KEY, not this token",
+        fix_hint=(
+            "remove `server.auth_token` from moonbridge-zai.yml "
+            "(loopback needs no key) or Codex will get 401; then restart Moon Bridge"
+        ),
+    )
+
+
+def _check_get_models(client: httpx.Client, headers: dict | None = None) -> CheckResult:
     """Check 4: ``GET /v1/models`` returns 2xx (httpx, hard timeout — D-90)."""
     name = "GET /v1/models"
     url = f"http://{_MOONBRIDGE_HOST}:{_MOONBRIDGE_PORT}/v1/models"
     try:
-        resp = client.get(url)
+        resp = client.get(url, headers=headers)
     except Exception as e:  # noqa: BLE001 — doctor reports, never raises.
         return CheckResult(
             name=name,
@@ -316,7 +375,9 @@ def _check_get_models(client: httpx.Client) -> CheckResult:
     )
 
 
-def _check_post_responses(client: httpx.Client) -> CheckResult:
+def _check_post_responses(
+    client: httpx.Client, headers: dict | None = None
+) -> CheckResult:
     """Check 5: ``POST /v1/responses`` (glm-5.2) returns 2xx (D-90).
 
     Sends a MINIMAL payload naming :data:`ZAI_MODEL` to the LOCAL Moon Bridge
@@ -329,9 +390,18 @@ def _check_post_responses(client: httpx.Client) -> CheckResult:
     # Minimal Responses-API-shaped payload naming the Z.ai model. Moon Bridge
     # converts Responses → Chat for upstream. We only care that a 2xx comes
     # back; we do NOT stream or parse the body.
-    payload = {"model": ZAI_MODEL, "input": "doctor ping"}
+    # Minimal payload: low reasoning effort + 1 output token. The goal is to
+    # verify Moon Bridge proxies + upstream Z.ai accepts the request (a 2xx) —
+    # NOT to get a meaningful answer. The default "doctor ping" forces glm-5.2
+    # to reason for 20-44s; low effort + max 1 token drops it to ~6s.
+    payload = {
+        "model": ZAI_MODEL,
+        "input": "doctor ping",
+        "reasoning": {"effort": "low"},
+        "max_output_tokens": 1,
+    }
     try:
-        resp = client.post(url, json=payload)
+        resp = client.post(url, json=payload, headers=headers)
     except Exception as e:  # noqa: BLE001 — doctor reports, never raises.
         return CheckResult(
             name=name,
@@ -371,7 +441,15 @@ def _check_models_cache(paths: Paths) -> CheckResult:
             detail=f"not parseable: {e}",
             fix_hint="models_cache.json is malformed; the Phase 15 fix will rebuild it",
         )
-    if ZAI_MODEL in cache:
+    # The real models_cache.json schema is ``{"models": [{"slug": <name>, ...}]}``
+    # — a LIST of dicts keyed by ``slug`` (NOT a top-level dict keyed by model
+    # name). Search the list by slug; the legacy ``ZAI_MODEL in cache`` check
+    # assumed the old dict shape and always missed the list-form entry.
+    models = cache.get("models") if isinstance(cache, dict) else None
+    found = isinstance(models, list) and any(
+        isinstance(m, dict) and m.get("slug") == ZAI_MODEL for m in models
+    )
+    if found:
         return CheckResult(
             name=name,
             verdict="pass",
@@ -480,37 +558,37 @@ def _check_key_mode(paths: Paths) -> CheckResult:
 
 
 def _check_codex_desktop(runner: Runner, *, platform_: str) -> CheckResult | None:
-    """Codex Desktop detection (D-91, DIAG-03) — darwin-only WARN.
+    """Codex-process detection (D-91, DIAG-03) — darwin-only WARN.
 
-    Returns ``None`` on non-darwin (the check is SKIPPED — pgrep may not find
-    "Codex"; the warn is darwin-Desktop-specific). On darwin, runs
-    ``pgrep -x Codex`` via ``runner``; running → WARN (staleness hint, never
-    fail); not running → pass (silent).
+    Returns ``None`` on non-darwin (the check is SKIPPED). On darwin, runs ONE
+    ``pgrep -f`` with the patterns OR-joined (Codex.app Desktop, ``codex
+    app-server`` CLI) via ``runner``; a match → WARN (staleness hint: a running
+    Codex may have cached an older config; never a fail). No match → pass.
     """
     if platform_ != "darwin":
         return None
     name = "Codex Desktop"
+    # OR-join the patterns into one pgrep call (one subprocess, not N).
+    pattern = "|".join(_CODEX_PROCESS_PATTERNS)
     try:
         result = runner(
-            ["pgrep", "-x", _CODEX_DESKTOP_PROCESS],
+            ["pgrep", "-fl", pattern],
             check=False,
             capture_output=True,
             text=True,
         )
     except Exception as e:  # noqa: BLE001 — doctor reports, never raises.
-        # pgrep itself failed (not installed, etc.) — surface as warn, not fail.
         return CheckResult(
             name=name,
             verdict="warn",
             detail=f"pgrep error: {e}",
-            fix_hint="could not check; ignore if you do not use Codex Desktop",
+            fix_hint="could not check; ignore if you do not use Codex",
         )
-    running = result.returncode == 0 and bool((result.stdout or "").strip())
-    if running:
+    if result.returncode == 0 and bool((result.stdout or "").strip()):
         return CheckResult(
             name=name,
             verdict="warn",
-            detail="Codex Desktop is running",
+            detail="Codex is running (Desktop or CLI app-server)",
             fix_hint=(
                 "it may have cached an older config; restart it for changes "
                 "to take effect"
@@ -529,12 +607,78 @@ def _check_codex_desktop(runner: Runner, *, platform_: str) -> CheckResult | Non
 # --------------------------------------------------------------------------- #
 
 
+#: Spinner frames for the long POST probe (ASCII-only, no color — CLAUDE.md D-04).
+_SPINNER_FRAMES = ("|", "/", "-", "\\")
+
+
+def run_with_spinner(
+    call: Callable[[], CheckResult],
+    *,
+    should_abort: Callable[[], bool],
+    label: str = "POST /v1/responses",
+    interval: float = 0.2,
+) -> CheckResult | None:
+    """Run ``call()`` in a daemon thread; animate a spinner; abort on signal.
+
+    Used to run the slow POST probe (3–20s upstream round-trip) without
+    blocking doctor's output: the main thread animates an ASCII spinner on
+    stderr (``\\r`` overwrite, no color) and polls ``should_abort()`` every
+    ``interval`` seconds.
+
+    Args:
+        call: the blocking POST check (returns a :class:`CheckResult`).
+        should_abort: polled each tick — True aborts (Esc in TUI / Ctrl-C in CLI).
+        label: spinner label text.
+        interval: poll interval (seconds).
+
+    Returns:
+        The :class:`CheckResult` from ``call`` if it finished, or ``None`` if
+        the user aborted (caller turns ``None`` into a "warn: interrupted").
+        The daemon thread is left to die on its own (httpx's hard read-timeout
+        bounds it) — daemon=True so it never blocks process exit.
+    """
+    result: dict[str, CheckResult | None] = {"out": None}
+    done = threading.Event()
+
+    def worker() -> None:
+        try:
+            result["out"] = call()
+        except Exception:  # noqa: BLE001 — doctor reports, never raises.
+            result["out"] = CheckResult(
+                name=label,
+                verdict="fail",
+                detail="request error in background thread",
+                fix_hint="Moon Bridge not reachable; check it is running",
+            )
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    frame_idx = 0
+    while not done.wait(timeout=interval):
+        if should_abort():
+            # Clear the spinner line and let the daemon thread finish on its own.
+            sys.stderr.write("\r" + " " * (len(label) + 12) + "\r")
+            sys.stderr.flush()
+            return None
+        sys.stderr.write(f"\r  {label} … {_SPINNER_FRAMES[frame_idx % 4]}  ")
+        sys.stderr.flush()
+        frame_idx += 1
+    # Done — clear the spinner line so the rendered verdict prints cleanly.
+    sys.stderr.write("\r" + " " * (len(label) + 12) + "\r")
+    sys.stderr.flush()
+    return result["out"]
+
+
 def run_doctor(
     paths: Paths,
     *,
     http_client: httpx.Client | None = None,
     runner: Runner = subprocess.run,
     environ: dict[str, str] | None = None,
+    post_check_runner: Callable[[Callable[[], CheckResult]], CheckResult | None]
+    | None = None,
 ) -> int:
     """Run the 9-check doctor pipeline and print colored verdicts (D-89..D-94).
 
@@ -579,30 +723,60 @@ def run_doctor(
     client = http_client or httpx.Client(timeout=_HTTP_TIMEOUT)
 
     try:
+        # Incremental render: each check prints IMMEDIATELY after it runs, so
+        # the user sees fast checks stream in one-by-one and only the slow POST
+        # (last) sits behind a spinner. ``results`` is kept ONLY to compute the
+        # exit code (any fail → 1).
         results: list[CheckResult] = []
 
-        # The 9-check ordered chain (DIAG-01). Each helper never raises — it
-        # returns a CheckResult (doctor owns its exit code, per CONTEXT).
-        results.append(_check_binary(paths))
-        results.append(_check_yml(paths))
-        results.append(_check_port_open())
-        results.append(_check_get_models(client))
-        results.append(_check_post_responses(client))
-        results.append(_check_models_cache(paths))
-        results.append(_check_current_default(paths))
-        results.append(_check_launchagent_loaded(paths, runner))
-        results.append(_check_key_mode(paths))
+        def _emit(result: CheckResult) -> CheckResult:
+            """Run-independent: record + print a check result on the fly."""
+            results.append(result)
+            print(render_check(result))
+            return result
+
+        # The ordered chain (DIAG-01). Each helper never raises — it returns a
+        # CheckResult (doctor owns its exit code, per CONTEXT).
+        _emit(_check_binary(paths))
+        _emit(_check_yml(paths))
+        _emit(_check_port_open())
+        # A present server.auth_token means Codex (which sends ZAI_API_KEY, not
+        # this token) will 401. Report it as a FAIL and probe the chain EXACTLY
+        # as Codex does — WITHOUT the auth_token header — so doctor diagnoses the
+        # real user-visible path instead of masking a 401 with a green probe.
+        auth_check = _check_auth_token(paths)
+        if auth_check is not None:
+            _emit(auth_check)
+        _emit(_check_get_models(client))
+        _emit(_check_current_default(paths))
+        _emit(_check_launchagent_loaded(paths, runner))
+        _emit(_check_key_mode(paths))
+        # POST /v1/responses LAST — it is the slow probe (3–20s upstream
+        # round-trip). If a post_check_runner is injected (TUI/CLI), run it in a
+        # background thread with a spinner + interrupt (Esc / Ctrl-C); else
+        # block (tests, default). Aborted → WARN, not FAIL.
+        post_result: CheckResult | None
+        if post_check_runner is not None:
+            post_result = post_check_runner(
+                lambda: _check_post_responses(client)
+            )
+        else:
+            post_result = _check_post_responses(client)
+        if post_result is None:
+            post_result = CheckResult(
+                name="POST /v1/responses",
+                verdict="warn",
+                detail="interrupted",
+                fix_hint="re-run doctor to retry the POST probe",
+            )
+        _emit(post_result)
 
         # Codex Desktop detection (D-91, DIAG-03) — darwin-only WARN. Appended
-        # AFTER the 9-check chain (it is a staleness hint, not a link in the
-        # Z.ai chain). Skipped (None) on non-darwin.
+        # AFTER the chain (it is a staleness hint, not a link in the Z.ai
+        # chain). Skipped (None) on non-darwin.
         codex = _check_codex_desktop(runner, platform_=sys.platform)
         if codex is not None:
-            results.append(codex)
-
-        # Render every result (color auto-detects from isatty via render_check).
-        for result in results:
-            print(render_check(result))
+            _emit(codex)
 
         # Exit code: 0 unless any check FAILED (D-89, D-92). WARNs don't fail.
         return 1 if any(r.verdict == "fail" for r in results) else 0

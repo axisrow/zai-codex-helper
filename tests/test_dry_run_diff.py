@@ -36,6 +36,7 @@ proof (CONF-07).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -220,7 +221,9 @@ def test_setup_dry_run_redacts_api_key_and_writes_nothing(
        no .zshrc, no config.toml, no .bak written).
     """
     # A distinctive canary that would be trivially greppable if it leaked.
-    canary = "sk-test-FAKE-DO-NOT-USE"
+    # MUST match the real Z.ai (BigModel) format validated by
+    # setup.validate_api_key(): <32-hex>.<16-alnum>.
+    canary = "c0ffee22222222222222222222222222.FAKEcanary123456"
     monkeypatch.setenv("ZAI_API_KEY", canary)
     paths = Paths.from_home(tmp_path)
     before = _snapshot(tmp_path)
@@ -240,8 +243,11 @@ def test_setup_dry_run_redacts_api_key_and_writes_nothing(
     combined = out.out + out.err
     # D-77 / T-15-01: the canary NEVER appears in the preview output.
     assert canary not in combined, "API key canary leaked into dry-run output"
-    # The redaction seam: the user sees the key WOULD be written (redacted).
-    assert "ZAI_API_KEY: <redacted>" in combined
+    # The redaction seam: the key line (providers.zai.api_key) is redacted.
+    # The value is replaced by a non-reversible fingerprint (<redacted:XXXXXXXX>)
+    # so a key CHANGE stays visible in a both-sides diff without leaking either
+    # value; a fresh setup (no current file) previews it as an added line.
+    assert re.search(r"api_key: <redacted(:[0-9a-f]{8})?>", combined), combined
 
 
 # =========================================================================== #
@@ -320,3 +326,50 @@ def test_use_openai_dry_run_prints_revert_diff_and_writes_nothing(tmp_path, caps
     assert "---" in combined and "+++" in combined
     # The revert surfaces the OpenAI model on an added line.
     assert "gpt-5.5" in combined
+
+
+@pytest.mark.unit
+def test_preview_yml_change_seals_foreign_secret_encodings(tmp_path):
+    """T-15-01: node-level redaction seals block-scalar, quoted, and auth_token secrets.
+
+    A foreign / hand-edited moonbridge-zai.yml may encode the key as a block
+    scalar (`api_key: |` + indented continuation), a quoted key (`"api_key":`),
+    or carry a `server.auth_token`. A LINE regex cannot redact these — the
+    continuation/quoted/token values survive to the removed side of the diff.
+    preview_yml_change redacts at the NODE level (safe_load → fingerprint secret
+    values → safe_dump), so NONE of the real values can reach stdout, while a
+    genuine key CHANGE still shows as a `<redacted:...>` diff line.
+    """
+    from zai_codex_helper.services.diff_preview import preview_yml_change
+
+    foreign = (
+        "mode: Transform\n"
+        "server:\n"
+        "  addr: 127.0.0.1:38440\n"
+        "  auth_token: SUPERSECRETLOOPBACKTOKEN\n"
+        "providers:\n"
+        "  zai:\n"
+        "    api_key: |\n"
+        "      SECRETBLOCKSCALARKEYLEAK\n"
+        "      SECONDLINE\n"
+        "  other:\n"
+        '    "api_key": QUOTEDKEYLEAK\n'
+    )
+    yml = tmp_path / "moonbridge-zai.yml"
+    yml.write_text(foreign, encoding="utf-8")
+
+    body = {"providers": {"zai": {"api_key": "BRANDNEWKEY9999"}}}
+    lines: list[str] = []
+    preview_yml_change(yml, body, lines.append)
+    out = "\n".join(lines)
+
+    for secret in (
+        "SUPERSECRETLOOPBACKTOKEN",  # auth_token
+        "SECRETBLOCKSCALARKEYLEAK",  # block scalar line 1
+        "SECONDLINE",  # block scalar continuation
+        "QUOTEDKEYLEAK",  # quoted key
+        "BRANDNEWKEY9999",  # the new target key
+    ):
+        assert secret not in out, f"secret leaked to stdout: {secret}\n{out}"
+    # The key change is still visible as a fingerprint diff line.
+    assert "<redacted:" in out

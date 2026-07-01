@@ -163,6 +163,18 @@ class TestApplyZai:
         # And the nested key must NOT exist.
         assert "reasoning" not in doc
 
+    def test_disables_zai_specific_features(self):
+        """Z.ai disables multi_agent/apps (mirrors prior `--disable` shell flags).
+
+        Verified via Context7: ``--disable <f>`` ≡ ``features.<f>=false`` in
+        config.toml. These features assume the OpenAI provider; with the
+        Z.ai→Moon Bridge proxy they must stay off. Surgical: only these two
+        keys land under [features].
+        """
+        doc = apply_zai(_parse(OPENAI_DEFAULT_FIXTURE))
+        assert doc["features"]["multi_agent"] is False
+        assert doc["features"]["apps"] is False
+
     def test_creates_exactly_one_zai_block(self):
         """D-36: replace-not-append — exactly one [model_providers.zai-moonbridge]."""
         doc = apply_zai(_parse(OPENAI_DEFAULT_FIXTURE))
