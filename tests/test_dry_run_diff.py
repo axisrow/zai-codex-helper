@@ -373,3 +373,41 @@ def test_preview_yml_change_seals_foreign_secret_encodings(tmp_path):
         assert secret not in out, f"secret leaked to stdout: {secret}\n{out}"
     # The key change is still visible as a fingerprint diff line.
     assert "<redacted:" in out
+
+
+@pytest.mark.unit
+def test_install_dry_run_shows_config_diff_exactly_once(tmp_path, monkeypatch, capsys):
+    """#6 regression lock: ``install --dry-run`` previews the config.toml diff ONCE.
+
+    Before the provider-apply unification, install_macro applied the provider
+    twice (run_setup STEP 6 + a second apply_pipeline), so ``install --dry-run``
+    printed the config.toml diff TWICE. Now the single primitive owns the apply
+    and the diff header appears exactly once.
+    """
+    from zai_codex_helper.services.install import install_macro
+
+    # Pre-create the Moon Bridge binary so the build step is skipped (no Go).
+    binary = tmp_path / ".codex" / "bin" / "moonbridge"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"#!/bin/sh\nexit 0\n")
+    import os
+    import stat
+
+    os.chmod(binary, 0o755)
+    assert binary.stat().st_mode & stat.S_IXUSR
+
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+    before = _snapshot(tmp_path)
+
+    install_macro(paths, dry_run=True, headless=True)
+
+    after = _snapshot(tmp_path)
+    assert before == after, "install --dry-run mutated files"
+
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    # The config.toml diff's target header appears EXACTLY once (not twice).
+    assert combined.count("config.toml (target)") == 1, combined

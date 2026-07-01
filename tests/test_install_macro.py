@@ -33,12 +33,27 @@ def test_uninstall_macro_dry_run_forwards_to_uninstall_service(
         fake_uninstall_service,
     )
 
-    def fake_pipeline(fn, stream, *, dry_run=False):
+    applied = {}
+
+    def fake_apply_provider(p, transform, *, dry_run=False):
         # config revert is previewed, not applied
-        assert dry_run is True
+        applied["dry_run"] = dry_run
+        from zai_codex_helper.services.provider_apply import ProviderApplyResult
 
-    install.uninstall_macro(paths, apply_pipeline=fake_pipeline, dry_run=True)
+        return ProviderApplyResult(
+            config_changed=False,
+            dry_run_diff="(no changes)",
+            desktop_restart_required=False,
+        )
 
+    monkeypatch.setattr(
+        "zai_codex_helper.services.provider_apply.apply_provider",
+        fake_apply_provider,
+    )
+
+    install.uninstall_macro(paths, dry_run=True)
+
+    assert applied["dry_run"] is True  # config revert previewed, not applied
     assert seen["dry_run"] is True  # dry_run reached uninstall_service
     assert paths.moonbridge_yml.exists()  # yml NOT removed in dry-run
     out = capsys.readouterr().out
@@ -62,10 +77,12 @@ def test_uninstall_macro_real_run_removes_yml(tmp_path, monkeypatch):
         "zai_codex_helper.services.lifecycle.uninstall_service",
         fake_uninstall_service,
     )
-
-    install.uninstall_macro(
-        paths, apply_pipeline=lambda *a, **k: None, dry_run=False
+    monkeypatch.setattr(
+        "zai_codex_helper.services.provider_apply.apply_provider",
+        lambda p, transform, *, dry_run=False: None,
     )
+
+    install.uninstall_macro(paths, dry_run=False)
 
     assert seen["dry_run"] is False
     assert not paths.moonbridge_yml.exists()  # yml removed on a real run

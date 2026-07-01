@@ -52,13 +52,19 @@ def test_dispatch_doctor_calls_run_doctor(monkeypatch):
 @pytest.mark.unit
 def test_dispatch_toggle_zai_flips_provider(monkeypatch):
     """Z.ai toggle calls apply_openai when currently Z.ai, else apply_zai."""
-    import zai_codex_helper.cli.parser as parser
+    from zai_codex_helper.services.provider_apply import ProviderApplyResult
 
     applied = []
+
+    def fake_apply_provider(paths, transform, *, dry_run=False):
+        applied.append(transform.__name__)
+        return ProviderApplyResult(
+            config_changed=True, dry_run_diff=None, desktop_restart_required=True
+        )
+
     monkeypatch.setattr(
-        parser,
-        "_apply_provider_pipeline",
-        lambda fn, stream, dry_run=False: applied.append(fn.__name__),
+        "zai_codex_helper.services.provider_apply.apply_provider",
+        fake_apply_provider,
     )
     monkeypatch.setattr(tui, "_pause", lambda: None)
     # state[0]=is_zai=True → flip to openai (state passed in, no _state call).

@@ -70,7 +70,6 @@ from collections.abc import Callable
 from typing import Any
 
 from zai_codex_helper.backends.shell import ShellBackend
-from zai_codex_helper.backends.toml import TomlBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.diff_preview import compute_diff, preview_yml_change
@@ -87,11 +86,7 @@ from zai_codex_helper.services.moonbridge_yml import (
     yml_has_auth_token,
 )
 from zai_codex_helper.services.paths import Paths
-from zai_codex_helper.services.providers import (
-    apply_openai,
-    apply_zai,
-    check_postconditions,
-)
+from zai_codex_helper.services.providers import apply_openai, apply_zai
 
 __all__ = [
     "run_setup",
@@ -323,29 +318,18 @@ def run_setup(
             ShellBackend(paths).write_canonical(SHELL_HELPERS_BODY)
 
     # ------------------------------------------------------------------ #
-    # STEP 6 (D-76 step 5) — APPLY THE CHOSEN PROVIDER (inline Phase 7 pipeline).
+    # STEP 6 (D-76 step 5) — APPLY THE CHOSEN PROVIDER.
     # ------------------------------------------------------------------ #
-    # INLINED (not imported from cli.parser) to avoid a cli ↔ services cycle
-    # (D-81: the orchestrator stays in the services layer). This is the SAME
-    # pipeline as _apply_provider_pipeline: seed-if-missing → backup_once →
-    # read → apply_zai/apply_openai → write_canonical → check_postconditions.
-    transform = apply_zai if provider == "zai" else apply_openai
-    if dry_run:
-        # D-95: preview the would-be config.toml change as a REAL diff. Mirrors
-        # _apply_provider_pipeline's dry-run branch: seed-if-missing (read-only
-        # existence check; NO write — a dry-run must not even seed), read,
-        # transform, tomlkit.dumps(doc), compute_diff. backup_once is SKIPPED
-        # (it is a mutating one-shot .bak write). The serialized target matches
-        # what write_canonical would produce, so the preview is faithful. NO
-        # postcondition check (nothing written to validate against).
-        import tomlkit
+    # The ONE provider-apply primitive (services layer; no cli import). On a real
+    # run it writes config.toml; on dry_run it returns the diff, which setup
+    # routes to print_fn. Setup emits its own summary (STEP 8) and no restart
+    # warning, so the result's other fields are ignored here.
+    from zai_codex_helper.services.provider_apply import apply_provider
 
-        backend = TomlBackend(paths)
-        doc = backend.read() if backend.exists() else tomlkit.document()
-        doc = transform(doc)
-        print_fn(compute_diff(paths.config_toml, tomlkit.dumps(doc)))
-    else:
-        _apply_provider_inline(paths, transform)
+    transform = apply_zai if provider == "zai" else apply_openai
+    result = apply_provider(paths, transform, dry_run=dry_run)
+    if result.dry_run_diff is not None:
+        print_fn(result.dry_run_diff)
 
     # ------------------------------------------------------------------ #
     # STEP 6.5 (D-98, SC-4 — models_cache.json glm-5.2 entry).
@@ -402,40 +386,3 @@ def run_setup(
     return 0
 
 
-def _apply_provider_inline(paths: Paths, transform: Callable[..., Any]) -> None:
-    """Run the Phase 7 provider write pipeline INLINED in the services layer.
-
-    Mirrors :func:`zai_codex_helper.cli.parser._apply_provider_pipeline` step
-    for step (seed-if-missing → backup_once → read → transform →
-    write_canonical → check_postconditions) so ``setup`` and ``use`` share ONE
-    write path and produce identical on-disk state. Inlined here (rather than
-    imported from ``cli.parser``) so the services layer never imports the cli
-    layer — no circular dependency (D-81).
-
-    Does NOT emit the restart warning: the orchestrator prints its own summary
-    (step 8), and the restart-warning concern is owned by the ``use`` handlers.
-    A future phase may surface it from the handler if needed.
-
-    Args:
-        paths: The resolved :class:`Paths` bundle.
-        transform: A pure provider transform (``apply_zai`` or ``apply_openai``).
-
-    Raises:
-        ZaiCodexHelperError: on a postcondition violation (let it propagate to
-            ``main()`` per D-11 — do NOT catch here).
-    """
-    import tomlkit
-
-    backend = TomlBackend(paths)
-    # SEED-IF-MISSING (D-45 step 3): backup_once RAISES "no config to back up"
-    # when the source is absent, so seed an empty doc first.
-    if not backend.exists():
-        backend.write_canonical(tomlkit.document())
-    # One-shot .bak (sentinel-gated — no-op after the first run).
-    backend.backup_once()
-    doc = backend.read()
-    doc = transform(doc)
-    backend.write_canonical(doc)
-    # Last line of defense — raises ZaiCodexHelperError on violation; let it
-    # propagate (D-11).
-    check_postconditions(doc)

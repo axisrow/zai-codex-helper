@@ -162,7 +162,6 @@ def _dispatch(
     Lazy imports keep ``tui.py`` import-light and side-effect-free at module
     load (mirrors the lazy-import discipline in ``cli/parser.py`` handlers).
     """
-    from zai_codex_helper.cli.parser import _apply_provider_pipeline
     from zai_codex_helper.services.doctor import run_doctor
     from zai_codex_helper.services.providers import apply_openai, apply_zai
 
@@ -172,20 +171,22 @@ def _dispatch(
     if kind == "macro-install":
         from zai_codex_helper.services.install import install_macro
 
-        install_macro(
-            paths, apply_pipeline=_apply_provider_pipeline, dry_run=dry, headless=True
-        )
+        install_macro(paths, dry_run=dry, headless=True)
     elif kind == "macro-uninstall":
         from zai_codex_helper.services.install import uninstall_macro
 
-        uninstall_macro(paths, apply_pipeline=_apply_provider_pipeline, dry_run=dry)
+        uninstall_macro(paths, dry_run=dry)
     elif kind == "toggle-zai":
         # Flip the config provider: zai→openai or openai→zai. Reuse the loop's
         # cached is_zai (no second launchctl-backed _state call).
+        from zai_codex_helper.cli.parser import _render_apply_result
+        from zai_codex_helper.services.provider_apply import apply_provider
+
         is_zai = state[0]
-        _apply_provider_pipeline(
-            apply_openai if is_zai else apply_zai, sys.stderr, dry_run=dry
+        result = apply_provider(
+            paths, apply_openai if is_zai else apply_zai, dry_run=dry
         )
+        _render_apply_result(result, sys.stderr)
     elif kind == "action-setkey":
         from zai_codex_helper.services.api_key import set_key
 
