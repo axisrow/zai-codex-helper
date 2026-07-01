@@ -140,6 +140,17 @@ def validate_api_key(key: str) -> None:
             "API key is malformed — expected <32-hex>.<16-alnum>, e.g. "
             "00000000000000000000000000000000.aaaaaaaaaaaaaaaa"
         )
+    if key == _DRY_RUN_PLACEHOLDER_KEY:
+        # The all-zeros dry-run sentinel is format-valid, so guard it here — the
+        # ONE validator every real (non-dry-run) key flows through (env in setup,
+        # env/prompt in set-key, prompt via _prompt_api_key). This makes the
+        # placeholder impossible to persist to moonbridge-zai.yml even if a user
+        # literally supplied it; the dry-run path assigns it WITHOUT validating,
+        # so previews are unaffected.
+        raise ZaiCodexHelperError(
+            "API key is the reserved dry-run placeholder (all zeros) — "
+            "supply your real Z.ai key"
+        )
 
 
 def _prompt_api_key(getpass_fn: Callable[[str], str], *, max_attempts: int = 3) -> str:
