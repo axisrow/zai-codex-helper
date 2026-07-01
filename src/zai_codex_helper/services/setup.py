@@ -63,7 +63,7 @@ import getpass
 import os
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from zai_codex_helper.backends.shell import ShellBackend
@@ -116,6 +116,12 @@ _VALID_PROVIDERS = ("zai", "openai")
 #: malformed key never reaches ``moonbridge-zai.yml``.
 _ZAI_KEY_RE = re.compile(r"^[0-9a-f]{32}\.[A-Za-z0-9]{16}$")
 
+#: A format-valid but obviously-fake key used ONLY on the dry-run path when no
+#: real key is available. A dry-run writes nothing and the yml preview redacts
+#: the value (fingerprint), so no real secret is needed to render the diff. All
+#: zeros makes it unmistakably a placeholder if it ever surfaced.
+_DRY_RUN_PLACEHOLDER_KEY = "00000000000000000000000000000000.0000000000000000"
+
 
 def validate_api_key(key: str) -> None:
     """Raise :class:`ZaiCodexHelperError` unless ``key`` matches the Z.ai format.
@@ -133,6 +139,17 @@ def validate_api_key(key: str) -> None:
         raise ZaiCodexHelperError(
             "API key is malformed — expected <32-hex>.<16-alnum>, e.g. "
             "00000000000000000000000000000000.aaaaaaaaaaaaaaaa"
+        )
+    if key == _DRY_RUN_PLACEHOLDER_KEY:
+        # The all-zeros dry-run sentinel is format-valid, so guard it here — the
+        # ONE validator every real (non-dry-run) key flows through (env in setup,
+        # env/prompt in set-key, prompt via _prompt_api_key). This makes the
+        # placeholder impossible to persist to moonbridge-zai.yml even if a user
+        # literally supplied it; the dry-run path assigns it WITHOUT validating,
+        # so previews are unaffected.
+        raise ZaiCodexHelperError(
+            "API key is the reserved dry-run placeholder (all zeros) — "
+            "supply your real Z.ai key"
         )
 
 
@@ -170,7 +187,7 @@ def run_setup(
     getpass_fn: Callable[[str], str] = getpass.getpass,
     confirm_fn: Callable[..., bool] = confirm,
     build_fn: Callable[..., Any] = build_moonbridge,
-    environ: os._Environ[str] = os.environ,
+    environ: Mapping[str, str] = os.environ,
     print_fn: Callable[..., None] = print,
 ) -> int:
     """Run the full Phase 12 onboarding flow (D-76..D-82).
@@ -246,6 +263,14 @@ def run_setup(
         # Env wins (preferred for automation). Validate it — a malformed env
         # key is a config bug, fail fast with an actionable message.
         validate_api_key(api_key)
+    elif dry_run:
+        # A dry-run writes NOTHING: STEP 3 renders a REDACTED yml preview
+        # (preview_yml_change fingerprints the key value) and STEP 6 never
+        # touches the key. So a real secret is not needed to preview — use a
+        # format-valid placeholder instead of demanding one / raising. This lets
+        # `setup --yes --dry-run` and TUI Install --dry-run preview with no env
+        # key set (the case #11 is about), without ever prompting for a secret.
+        api_key = _DRY_RUN_PLACEHOLDER_KEY
     elif yes:
         # D-79: headless + no env → there is no stdin to fall back to. Raise
         # an actionable error naming the env var; let it propagate to main().

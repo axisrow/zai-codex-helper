@@ -17,6 +17,8 @@ no injected pipeline).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from zai_codex_helper.services.paths import Paths
 
 __all__ = ["install_macro", "uninstall_macro"]
@@ -28,6 +30,7 @@ def install_macro(
     dry_run: bool = False,
     headless: bool = False,
     force: bool = False,
+    environ: Mapping[str, str] | None = None,
 ) -> None:
     """Turn Z.ai ON end-to-end (the Core Value in one call).
 
@@ -36,6 +39,11 @@ def install_macro(
         dry_run: preview each step without writing.
         headless: skip interactive prompts (``--yes`` / ``--no-input``).
         force: force the LaunchAgent reinstall even when already converged (Q2).
+        environ: explicit environment mapping for ``run_setup``'s ``ZAI_API_KEY``
+            lookup. The TUI passes ``{"ZAI_API_KEY": <key>}`` after prompting so
+            headless setup finds the key WITHOUT mutating the global
+            ``os.environ`` (a secret must not leak into child subprocesses).
+            ``None`` (default) → ``run_setup`` reads the real ``os.environ``.
     """
     from zai_codex_helper.services.lifecycle import install_service
     from zai_codex_helper.services.setup import run_setup
@@ -46,7 +54,12 @@ def install_macro(
     #    STEP 6. `provider="zai"` FORCES Z.ai even when run_setup would otherwise
     #    prompt (interactive install, headless=False): `install` must ALWAYS end
     #    Z.ai-on. (One apply, inside setup — no double write, the #6 fix.)
-    run_setup(paths, yes=headless, provider="zai", dry_run=dry_run)
+    #    `environ` (when given) supplies the key the TUI collected — run_setup's
+    #    default is os.environ, so pass it through only when overridden.
+    if environ is None:
+        run_setup(paths, yes=headless, provider="zai", dry_run=dry_run)
+    else:
+        run_setup(paths, yes=headless, provider="zai", dry_run=dry_run, environ=environ)
     # 2. Strip a foreign `codex () { --profile zai-glm ... }` shim if present —
     #    it shadows a bare `codex` (--profile > config default).
     if not dry_run:

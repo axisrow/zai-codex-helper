@@ -503,6 +503,31 @@ def test_validate_api_key_rejects_malformed(bad, why):
 
 
 @pytest.mark.unit
+def test_validate_api_key_rejects_dry_run_placeholder():
+    """Codex R2 regression: the all-zeros dry-run sentinel is rejected on real paths.
+
+    _DRY_RUN_PLACEHOLDER_KEY is format-valid (so dry-run previews render), which
+    means it would otherwise slip past validate_api_key and be persisted to
+    moonbridge-zai.yml if a user literally supplied it as ZAI_API_KEY / at the
+    prompt. validate_api_key is the ONE gate every real key flows through, so
+    guard it here — the placeholder can never reach a real write.
+    """
+    with pytest.raises(ZaiCodexHelperError, match="dry-run placeholder"):
+        setup.validate_api_key(setup._DRY_RUN_PLACEHOLDER_KEY)
+
+
+@pytest.mark.unit
+def test_run_setup_real_headless_rejects_placeholder_env(tmp_path, monkeypatch):
+    """A real (non-dry) headless run with the placeholder in env fails before any write."""
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv("ZAI_API_KEY", setup._DRY_RUN_PLACEHOLDER_KEY)
+    with pytest.raises(ZaiCodexHelperError, match="dry-run placeholder"):
+        run_setup(paths, yes=True, dry_run=False)
+    # STEP 2 raises before STEP 3 — the yml was never written.
+    assert not paths.moonbridge_yml.exists()
+
+
+@pytest.mark.unit
 def test_prompt_api_key_retries_then_succeeds(monkeypatch, capsys):
     """A malformed first attempt is retried; a valid second attempt is accepted.
 

@@ -169,9 +169,24 @@ def _dispatch(
     if kind == "action-quit":
         return True
     if kind == "macro-install":
+        import os
+
         from zai_codex_helper.services.install import install_macro
 
-        install_macro(paths, dry_run=dry, headless=True)
+        # Headless install requires ZAI_API_KEY. In the (interactive) TUI, if the
+        # env var is unset, collect it here rather than hard-erroring like an
+        # automation path (#11) — the same hidden getpass under cbreak that the
+        # Set Key item already uses. Dry-run is a preview: never prompt for a
+        # secret just to show a diff. The key goes into a scoped environ mapping
+        # (not the global os.environ) so it can't leak into build/launchctl.
+        environ = None
+        if not dry and not os.environ.get("ZAI_API_KEY"):
+            import getpass
+
+            from zai_codex_helper.services.setup import _prompt_api_key
+
+            environ = {"ZAI_API_KEY": _prompt_api_key(getpass.getpass)}
+        install_macro(paths, dry_run=dry, headless=True, environ=environ)
     elif kind == "macro-uninstall":
         from zai_codex_helper.services.install import uninstall_macro
 
