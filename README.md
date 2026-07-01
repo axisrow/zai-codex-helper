@@ -61,7 +61,9 @@ both Codex CLI and the Desktop app read — starts on Z.ai.
 
 Global flags are accepted **both before and after** the subcommand:
 
-- `--dry-run` — preview every change as a diff; writes nothing.
+- `--dry-run` — preview a change as a diff instead of writing it, for the
+  config-mutating commands (`use`, `setup`, `install`, `uninstall`, `set-key`).
+  Note: `restore` ignores it and rolls back immediately.
 - `--debug` — print a full traceback instead of the one-line `error: <msg>`.
 - `--yes` / `--no-input` — headless mode for the interactive flows (`setup`,
   `install`): skip all prompts, taking the key from `ZAI_API_KEY` in the
