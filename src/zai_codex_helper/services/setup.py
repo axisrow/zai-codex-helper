@@ -80,11 +80,14 @@ from zai_codex_helper.services.models_cache import (
     update_models_cache,
 )
 from zai_codex_helper.services.moonbridge import build_moonbridge
+from zai_codex_helper.services.moonbridge_yml import (
+    AUTH_TOKEN_LEFT_WARNING,
+    AUTH_TOKEN_PROMPT,
+    canonical_moonbridge_yml,
+    yml_has_auth_token,
+)
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.providers import (
-    MOONBRIDGE_HOST,
-    MOONBRIDGE_PORT,
-    ZAI_MODEL,
     apply_openai,
     apply_zai,
     check_postconditions,
@@ -93,46 +96,9 @@ from zai_codex_helper.services.providers import (
 __all__ = [
     "run_setup",
     "validate_api_key",
-    "canonical_moonbridge_yml",
+    "canonical_moonbridge_yml",  # re-exported from moonbridge_yml (owner)
     "SHELL_HELPERS_BODY",
 ]
-
-
-#: Z.ai (BigModel) upstream — the REAL Moon Bridge config schema (verified
-#: against ``config.example.yml`` + the user's working yml). The key lives in
-#: ``providers.<name>.api_key`` (NOT a top-level ``ZAI_API_KEY`` — Moon Bridge
-#: rejects that with EX_CONFIG). These constants are the single source so the
-#: canonical body, ``set-key``, and doctor agree.
-_ZAI_PROVIDER_NAME = "zai"
-_ZAI_PROTOCOL = "openai-chat"
-_ZAI_UPSTREAM_BASE_URL = "https://api.z.ai/api/coding/paas/v4/chat/completions"
-_ZAI_USER_AGENT = "moonbridge/1.0"
-
-
-def canonical_moonbridge_yml(api_key: str) -> dict:
-    """The canonical ``moonbridge-zai.yml`` — a REAL Moon Bridge config body.
-
-    Top-level ``mode`` / ``server`` (NO ``auth_token`` — loopback needs no
-    local auth) / ``providers.zai`` (the Z.ai upstream: protocol, base_url,
-    ``api_key``, user_agent, offers) / ``routes`` / ``models``. This matches
-    Moon Bridge's actual schema; the previous ``{ZAI_API_KEY, model, server}``
-    shape was rejected by Moon Bridge (``field ZAI_API_KEY not found``).
-    """
-    return {
-        "mode": "Transform",
-        "server": {"addr": f"{MOONBRIDGE_HOST}:{MOONBRIDGE_PORT}"},
-        "providers": {
-            _ZAI_PROVIDER_NAME: {
-                "protocol": _ZAI_PROTOCOL,
-                "base_url": _ZAI_UPSTREAM_BASE_URL,
-                "api_key": api_key,
-                "user_agent": _ZAI_USER_AGENT,
-                "offers": [{"model": ZAI_MODEL}],
-            }
-        },
-        "routes": {ZAI_MODEL: {"model": ZAI_MODEL, "provider": _ZAI_PROVIDER_NAME}},
-        "models": {ZAI_MODEL: {}},
-    }
 
 
 #: The shell-helpers block BODY (D-76 step 4). Written verbatim INSIDE the
@@ -300,12 +266,6 @@ def run_setup(
     # gets 401 (it sends ZAI_API_KEY, Moon Bridge expects the auth_token). Ask
     # ONCE whether to switch to localhost-only (drop the token). No/declined →
     # leave the yml untouched + warn; Yes → backup once, then write canonical.
-    from zai_codex_helper.services.api_key import (
-        AUTH_TOKEN_LEFT_WARNING,
-        AUTH_TOKEN_PROMPT,
-        yml_has_auth_token,
-    )
-
     yml_backend = YamlBackend(paths)
     existing = yml_backend.read() if yml_backend.exists() else None
     if yml_has_auth_token(existing) and not confirm_fn(AUTH_TOKEN_PROMPT):
