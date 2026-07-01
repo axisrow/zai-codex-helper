@@ -67,7 +67,8 @@ Global flags are accepted **both before and after** the subcommand:
 - `--debug` — print a full traceback instead of the one-line `error: <msg>`.
 - `--yes` / `--no-input` — headless mode for the interactive flows (`setup`,
   `install`): skip all prompts, taking the key from `ZAI_API_KEY` in the
-  environment. Commands that don't prompt ignore these flags.
+  environment. Only `setup` and `install` read these flags; every other command
+  ignores them.
 
 `install` and `install-service` are **convergent**: a repeat run on a healthy,
 already-installed setup does nothing (it won't bounce a running Moon Bridge).
