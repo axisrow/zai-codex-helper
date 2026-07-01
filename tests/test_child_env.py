@@ -12,12 +12,22 @@ from zai_codex_helper.services.env import SENSITIVE_ENV_VARS, child_env
 
 
 @pytest.mark.unit
-def test_child_env_strips_zai_api_key():
-    """ZAI_API_KEY is removed; every other var survives verbatim."""
-    src = {"ZAI_API_KEY": "secret", "PATH": "/usr/bin", "HOME": "/Users/x"}
+def test_child_env_strips_both_secrets_keeps_path_home():
+    """Both ZAI_API_KEY and MOONBRIDGE_API_KEY are removed; PATH/HOME survive.
+
+    MOONBRIDGE_API_KEY is the legacy foreign-shim token the helper strips from
+    .zshrc; if a user's shell still exports it, it must not leak to subprocesses.
+    """
+    src = {
+        "ZAI_API_KEY": "secret",
+        "MOONBRIDGE_API_KEY": "sk-moonbridge-zai-local",
+        "PATH": "/usr/bin",
+        "HOME": "/Users/x",
+    }
     out = child_env(src)
     assert "ZAI_API_KEY" not in out
-    assert out == {"PATH": "/usr/bin", "HOME": "/Users/x"}
+    assert "MOONBRIDGE_API_KEY" not in out
+    assert out == {"PATH": "/usr/bin", "HOME": "/Users/x"}  # PATH/HOME preserved
 
 
 @pytest.mark.unit
@@ -38,6 +48,7 @@ def test_child_env_does_not_mutate_source():
 
 
 @pytest.mark.unit
-def test_sensitive_set_contains_the_key():
-    """The stripped-var set names ZAI_API_KEY (the one secret today)."""
+def test_sensitive_set_contains_both_secrets():
+    """The stripped-var set names both known secrets."""
     assert "ZAI_API_KEY" in SENSITIVE_ENV_VARS
+    assert "MOONBRIDGE_API_KEY" in SENSITIVE_ENV_VARS

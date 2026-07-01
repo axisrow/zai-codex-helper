@@ -15,9 +15,13 @@ from collections.abc import Mapping
 
 __all__ = ["child_env", "SENSITIVE_ENV_VARS"]
 
-#: Environment variables stripped before spawning a child process. Only the
-#: Z.ai key today; kept as a set so a future secret joins in one place.
-SENSITIVE_ENV_VARS: frozenset[str] = frozenset({"ZAI_API_KEY"})
+#: Environment variables stripped before spawning a child process:
+#: - ``ZAI_API_KEY`` — the Z.ai key (Moon Bridge reads it from the yml, not env).
+#: - ``MOONBRIDGE_API_KEY`` — the legacy foreign-shim auth token the helper
+#:   actively removes from ``.zshrc`` (see ``services/zshrc.py``). A user whose
+#:   shell still exports it must not leak it into git/go/launchctl children.
+#: Kept as a set so a future secret joins in one place.
+SENSITIVE_ENV_VARS: frozenset[str] = frozenset({"ZAI_API_KEY", "MOONBRIDGE_API_KEY"})
 
 
 def child_env(environ: Mapping[str, str] = os.environ) -> dict[str, str]:
