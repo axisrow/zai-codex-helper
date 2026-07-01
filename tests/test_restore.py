@@ -41,6 +41,27 @@ def test_restore_rolls_back_to_bak_sc2(tmp_path):
 
 
 @pytest.mark.unit
+def test_restore_ignores_dry_run_and_rolls_back(tmp_path):
+    """`restore --dry-run` still restores — restore does NOT honor --dry-run.
+
+    Locks the README's explicit carve-out ("restore ignores --dry-run and rolls
+    back immediately"): the global --dry-run flag is accepted by the shared
+    parser but _handle_restore restores unconditionally. If a future change makes
+    restore honor dry_run, this test flips and the README note must be updated in
+    the same PR — keeping docs and behavior in lockstep.
+    """
+    codex = tmp_path / ".codex"
+    _write(codex / "config.toml", b"LIVE_CHANGED")
+    _write(codex / BAK_NAME, b"ORIGINAL_BACKUP")
+
+    rc = main(["restore", "--dry-run"])
+
+    assert rc == 0
+    # Despite --dry-run, the live config WAS overwritten from the .bak.
+    assert (codex / "config.toml").read_bytes() == b"ORIGINAL_BACKUP"
+
+
+@pytest.mark.unit
 def test_restore_no_bak_exit1_one_line_stderr_no_traceback(tmp_path, capsys):
     """D-11: no .bak → exit 1, exactly one stderr line `error: no backup to restore`, no traceback."""
     codex = tmp_path / ".codex"

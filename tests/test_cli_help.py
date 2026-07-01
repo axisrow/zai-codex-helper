@@ -16,8 +16,17 @@ that live there (e.g. pygments, pulled in by pytest).
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+#: Repo root (this file lives at <root>/tests/test_cli_help.py).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+#: Phrases that mean "the CLI is a stub" — false since every subcommand became a
+#: real handler (Phase 14). If any reappears in the README, the docs drifted
+#: back to the pre-implementation lie this test guards against.
+_STALE_PHRASES = ("not implemented", "not yet implemented", "stub", "placeholder")
 
 # Captured at import time, before _isolate_home redirects HOME.
 REAL_HOME = os.environ["HOME"]
@@ -48,6 +57,19 @@ def test_help_exits_zero():
     assert result.returncode == 0
     assert "usage:" in result.stdout.lower()
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.smoke
+def test_readme_has_no_stub_language():
+    """README must not claim the CLI is a stub — every subcommand is real now.
+
+    Locks the PR4 truth-up: the old README said the subcommands print
+    ``not implemented in this phase``. That is false, and a lazy edit could
+    reintroduce it. Fail loudly if any stub phrase creeps back in.
+    """
+    readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8").lower()
+    hits = [p for p in _STALE_PHRASES if p in readme]
+    assert not hits, f"README.md contains stale stub language: {hits}"
 
 
 @pytest.mark.smoke
