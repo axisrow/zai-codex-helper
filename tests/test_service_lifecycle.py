@@ -133,9 +133,10 @@ def test_install_service_bootstrap_argv_on_darwin(tmp_path, monkeypatch):
     _darwin(monkeypatch)
     _uid(monkeypatch, 501)
     paths = Paths.from_home(tmp_path)
-    # print call returns rc 0 + a stdout without "Could not find" → loaded.
+    # pre-bootout, bootstrap, print — print returns rc 0 w/o "Could not find".
     runner, captured = _recording_runner(
         responses=[
+            _ok(["launchctl", "bootout"]),
             _ok(["launchctl", "bootstrap"]),
             _ok(["launchctl", "print"], "state = running"),
         ]
@@ -147,17 +148,19 @@ def test_install_service_bootstrap_argv_on_darwin(tmp_path, monkeypatch):
     assert rc == 0
     # The bootstrap argv is EXACTLY the documented shape.
     expected_plist = str(paths.launchagents_dir / "dev.zai.moonbridge.plist")
+    expected_bootout = ["launchctl", "bootout", "gui/501/" + plist_mod.LABEL]
     expected_bootstrap = [
         "launchctl",
         "bootstrap",
         "gui/501",
         expected_plist,
     ]
-    # Find the bootstrap call (first call is bootstrap, second is print).
     argvs = [c["argv"] for c in captured]
     assert expected_bootstrap in argvs
-    # bootstrap was the FIRST call (plist write is NOT a runner call).
-    assert argvs[0] == expected_bootstrap
+    # pre-bootout runs FIRST (forces launchd to reload the new plist), then
+    # bootstrap (plist write is NOT a runner call).
+    assert argvs[0] == expected_bootout
+    assert argvs[1] == expected_bootstrap
     # Every launchctl call used check=False + capture_output (in-band handling).
     for call in captured:
         assert call["kwargs"].get("check") is False
@@ -172,6 +175,7 @@ def test_install_service_writes_plist_before_bootstrap(tmp_path, monkeypatch):
     paths = Paths.from_home(tmp_path)
     runner, _ = _recording_runner(
         responses=[
+            _ok(["launchctl", "bootout"]),
             _ok(["launchctl", "bootstrap"]),
             _ok(["launchctl", "print"], "state = running"),
         ]
@@ -221,12 +225,13 @@ def test_install_service_bootstrap_real_failure_raises(tmp_path, monkeypatch):
     paths = Paths.from_home(tmp_path)
     runner, _ = _recording_runner(
         responses=[
+            _ok(["launchctl", "bootout"]),  # pre-bootout succeeds
             subprocess.CompletedProcess(
                 ["launchctl", "bootstrap"],
                 125,
                 stdout="",
                 stderr="Bootstrap failed: 125",
-            )
+            ),
         ]
     )
     _patch_port(monkeypatch, connects=True)
@@ -249,6 +254,7 @@ def test_install_service_already_loaded_is_idempotent_success(tmp_path, monkeypa
     paths = Paths.from_home(tmp_path)
     runner, _ = _recording_runner(
         responses=[
+            _ok(["launchctl", "bootout"]),  # pre-bootout succeeds
             subprocess.CompletedProcess(
                 ["launchctl", "bootstrap"],
                 125,
@@ -281,6 +287,7 @@ def test_install_service_swallows_input_output_error_eio(tmp_path, monkeypatch):
     paths = Paths.from_home(tmp_path)
     runner, _ = _recording_runner(
         responses=[
+            _ok(["launchctl", "bootout"]),  # pre-bootout succeeds
             subprocess.CompletedProcess(
                 ["launchctl", "bootstrap"],
                 5,
@@ -295,6 +302,68 @@ def test_install_service_swallows_input_output_error_eio(tmp_path, monkeypatch):
     rc = lifecycle.install_service(paths, runner=runner)
 
     assert rc == 0
+
+
+@pytest.mark.unit
+def test_install_service_bootouts_existing_before_bootstrap(tmp_path, monkeypatch):
+    """In-place upgrade: install boots out the existing label THEN bootstraps.
+
+    Regression: launchd will not reload ProgramArguments for an
+    already-bootstrapped label, so a plain bootstrap left the STALE binary-path
+    job running while reporting success. Install must bootout-then-bootstrap so
+    the freshly-written plist (e.g. the moved ~/.codex/bin/moonbridge path)
+    actually takes effect. The existing registration boots out cleanly here.
+    """
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),  # existing job booted out
+            _ok(["launchctl", "bootstrap"]),  # new plist bootstrapped
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+    _patch_port(monkeypatch, connects=True)
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    # bootout targets the exact Label-anchored registration, and runs FIRST.
+    assert argvs[0] == ["launchctl", "bootout", "gui/501/" + plist_mod.LABEL]
+    assert argvs[1][:2] == ["launchctl", "bootstrap"]
+
+
+@pytest.mark.unit
+def test_install_service_raises_on_real_prebootout_failure(tmp_path, monkeypatch):
+    """A non-already-booted-out pre-bootout failure → raises (does not proceed).
+
+    A REAL bootout failure (e.g. "Operation not permitted") before bootstrap
+    must surface, not be swallowed — otherwise install would bootstrap over a
+    still-running stale job.
+    """
+    _darwin(monkeypatch)
+    _uid(monkeypatch)
+    paths = Paths.from_home(tmp_path)
+    runner, _ = _recording_runner(
+        responses=[
+            subprocess.CompletedProcess(
+                ["launchctl", "bootout"],
+                1,
+                stdout="",
+                stderr="Operation not permitted",
+            ),
+        ]
+    )
+    _patch_port(monkeypatch, connects=True)
+
+    with pytest.raises(ZaiCodexHelperError) as exc:
+        lifecycle.install_service(paths, runner=runner)
+
+    assert "bootout" in str(exc.value).lower()
+    # The plist is NEVER written when pre-bootout fails hard.
+    assert not (paths.launchagents_dir / "dev.zai.moonbridge.plist").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +407,29 @@ def test_uninstall_service_removes_plist(tmp_path, monkeypatch):
     lifecycle.uninstall_service(paths, runner=runner)
 
     assert not plist_path.exists()
+
+
+@pytest.mark.unit
+def test_uninstall_service_dry_run_touches_nothing(tmp_path, monkeypatch):
+    """uninstall --dry-run: NO launchctl call, NO plist unlink (regression).
+
+    Previously uninstall_service had no dry_run param, so `uninstall --dry-run`
+    really booted out the agent and deleted the plist while only previewing the
+    rest — a partial, destructive "dry" run.
+    """
+    _darwin(monkeypatch)
+    _uid(monkeypatch)
+    paths = Paths.from_home(tmp_path)
+    plist_path = paths.launchagents_dir / "dev.zai.moonbridge.plist"
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    plist_path.write_bytes(b"<plist/>")
+    runner, captured = _recording_runner()
+
+    rc = lifecycle.uninstall_service(paths, runner=runner, dry_run=True)
+
+    assert rc == 0
+    assert captured == []  # launchctl NEVER called
+    assert plist_path.exists()  # plist NOT removed
 
 
 @pytest.mark.unit
@@ -547,6 +639,7 @@ def test_install_raises_when_verify_reports_not_loaded(tmp_path, monkeypatch):
     paths = Paths.from_home(tmp_path)
     runner, _ = _recording_runner(
         responses=[
+            _ok(["launchctl", "bootout"]),  # pre-bootout succeeds
             _ok(["launchctl", "bootstrap"]),
             subprocess.CompletedProcess(
                 ["launchctl", "print"],
@@ -581,6 +674,7 @@ def test_install_warns_but_exits_zero_when_loaded_and_port_fails(
     paths = Paths.from_home(tmp_path)
     runner, _ = _recording_runner(
         responses=[
+            _ok(["launchctl", "bootout"]),
             _ok(["launchctl", "bootstrap"]),
             _ok(["launchctl", "print"], stdout="state = running"),
         ]

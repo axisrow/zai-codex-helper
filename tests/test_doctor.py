@@ -728,14 +728,18 @@ def test_run_doctor_runner_seam_drives_pgrep_and_launchctl(
 
 
 @pytest.mark.unit
-def test_doctor_sends_auth_token_header_when_yml_has_one(
+def test_doctor_fails_and_probes_unauthenticated_when_yml_has_auth_token(
     tmp_path, monkeypatch, httpserver
 ):
-    """A foreign yml with ``server.auth_token`` → probes carry ``Authorization:
-    Bearer <token>`` (otherwise Moon Bridge would false-401 the doctor).
+    """A foreign yml with ``server.auth_token`` → doctor FAILS and probes WITHOUT the token.
 
-    Guards the regression where doctor probed unauthenticated and reported a
-    spurious 401 on a config that actually works once authenticated.
+    Codex sends ``ZAI_API_KEY``, not Moon Bridge's ``server.auth_token``, so an
+    ``auth_token`` means the real Codex path 401s. doctor must diagnose that (a
+    FAIL) and probe EXACTLY as Codex does — no ``Authorization`` header — rather
+    than authenticating with the token and masking the 401 with a green probe.
+
+    Regression: doctor used to send ``Bearer <auth_token>`` on its probes and
+    report exit 0 on a config Codex cannot actually use.
     """
     _seed_full_pass_state(tmp_path)
     # Overwrite the yml with a FOREIGN config that sets server.auth_token.
@@ -750,32 +754,39 @@ def test_doctor_sends_auth_token_header_when_yml_has_one(
     paths = Paths.from_home(tmp_path)
     _patch_port(monkeypatch, connects=True)
     _redirect_to_httpserver(monkeypatch, httpserver)
-    # Expect the probes to arrive WITH the Bearer header; respond 200 so the
-    # checks pass iff the header was sent.
-    httpserver.expect_request(
-        "/v1/models",
-        method="GET",
-        headers={"Authorization": "Bearer sk-moonbridge-zai-local"},
-    ).respond_with_data('{"data": []}', status=200)
-    httpserver.expect_request(
-        "/v1/responses",
-        method="POST",
-        headers={"Authorization": "Bearer sk-moonbridge-zai-local"},
-    ).respond_with_data("ok", status=200)
+    # Probes must arrive WITHOUT any Authorization header (Codex-equivalent).
+    # Respond 200 so the ONLY thing that can fail is the auth_token check.
+    seen_auth_headers = []
+
+    def _capture(req):
+        from werkzeug.wrappers import Response
+
+        seen_auth_headers.append(req.headers.get("Authorization"))
+        return Response('{"data": []}', status=200)
+
+    httpserver.expect_request("/v1/models", method="GET").respond_with_handler(
+        _capture
+    )
+    httpserver.expect_request("/v1/responses", method="POST").respond_with_handler(
+        _capture
+    )
 
     with _client_for(httpserver) as client:
         rc = run_doctor(paths, http_client=client, runner=_recording_runner()[0])
 
-    # exit 0 proves BOTH probes got 200 — i.e. the auth header was accepted.
-    assert rc == 0
+    # auth_token present → doctor FAILS (exit 1), even though the probes got 200.
+    assert rc == 1
+    # And the probes carried NO Authorization header (probed as Codex does).
+    assert seen_auth_headers  # probes actually ran
+    assert all(h is None for h in seen_auth_headers), seen_auth_headers
 
 
 @pytest.mark.unit
-def test_doctor_read_auth_token_none_for_canonical_yml(tmp_path):
-    """Canonical helper yml (no auth_token) → _read_auth_token returns None."""
+def test_doctor_check_auth_token_none_for_canonical_yml(tmp_path):
+    """Canonical helper yml (no auth_token) → _check_auth_token returns None."""
     _seed_full_pass_state(tmp_path)
     paths = Paths.from_home(tmp_path)
-    assert doctor._read_auth_token(paths) is None
+    assert doctor._check_auth_token(paths) is None
 
 
 @pytest.mark.unit

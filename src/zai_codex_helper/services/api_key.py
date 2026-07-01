@@ -141,14 +141,16 @@ def set_key(
     provider["api_key"] = new_key
     if drop_token and isinstance(updated.get("server"), dict):
         updated["server"].pop("auth_token", None)
-    # One-shot .bak of the original (sentinel-gated, like config.toml) so the
-    # user's full config (providers/routes/...) is recoverable. yml exists here
-    # (checked at entry), so backup_once will not raise "no config to back up".
-    backend.backup_once()
-
     if dry_run:
+        # --dry-run = zero writes: preview and bail BEFORE backup_once (which
+        # writes the .bak and consumes the global backup sentinel).
         preview_yml_change(paths.moonbridge_yml, updated, print_fn)
         return 0
+
+    # One-shot .bak of the original (per-file sentinel-gated, like config.toml)
+    # so the user's full config (providers/routes/...) is recoverable. yml
+    # exists here (checked at entry), so backup_once won't raise "no config".
+    backend.backup_once()
 
     # write_canonical defaults to 0o600 (LOAD-BEARING — this file holds the key).
     backend.write_canonical(updated)

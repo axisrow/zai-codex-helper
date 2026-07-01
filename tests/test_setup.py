@@ -231,7 +231,8 @@ def test_setup_yes_flag_scriptable_sc2(tmp_path, monkeypatch, capsys):
         paths.moonbridge_yml,
         paths.zshrc,
         paths.config_toml.parent / (paths.config_toml.name + ".zai-codex-helper.bak"),
-        paths.config_toml.parent / ".zai-codex-helper.backed-up",
+        paths.codex_dir / (paths.config_toml.name + ".zai-codex-helper.backed-up"),
+        paths.codex_dir / (paths.moonbridge_yml.name + ".zai-codex-helper.backed-up"),
     ):
         if p.exists():
             p.unlink()

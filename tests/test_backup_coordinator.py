@@ -71,7 +71,7 @@ def test_backup_once_first_call_copies_and_creates_sentinel(tmp_path):
     BackupCoordinator.backup_once(paths, backend)
 
     bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
-    sentinel = paths.codex_dir / SENTINEL_NAME
+    sentinel = paths.codex_dir / (paths.config_toml.name + SENTINEL_NAME)
 
     assert bak.exists()
     assert bak.read_bytes() == b"ORIGINAL"
@@ -95,7 +95,7 @@ def test_backup_once_second_call_is_noop(tmp_path):
     _seed_config(paths, b"ORIGINAL")
     backend = _PathOnly(paths.config_toml)
     bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
-    sentinel = paths.codex_dir / SENTINEL_NAME
+    sentinel = paths.codex_dir / (paths.config_toml.name + SENTINEL_NAME)
 
     BackupCoordinator.backup_once(paths, backend)
     assert sentinel.exists()
@@ -125,9 +125,11 @@ def test_backup_once_sentinel_only_short_circuits(tmp_path):
     backend = _PathOnly(paths.config_toml)
     bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
 
-    # Pre-create ONLY the sentinel.
+    # Pre-create ONLY this file's sentinel.
     paths.codex_dir.mkdir(parents=True, exist_ok=True)
-    (paths.codex_dir / SENTINEL_NAME).write_bytes(b"backed-up\n")
+    (paths.codex_dir / (paths.config_toml.name + SENTINEL_NAME)).write_bytes(
+        b"backed-up\n"
+    )
 
     BackupCoordinator.backup_once(paths, backend)
 
@@ -160,6 +162,34 @@ def test_backup_once_bak_is_sibling_not_in_backup_dir(tmp_path):
     assert not str(expected_bak).startswith(str(paths.backup_dir))
     # backup_dir is never written in Phase 4 (D-28).
     assert not paths.backup_dir.exists()
+
+
+# --------------------------------------------------------------------------- #
+# T4b — per-file gate: one file's backup does NOT starve another's (regression)
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_backup_once_per_file_gate_is_independent(tmp_path):
+    """Backing up the yml must NOT no-op a later config.toml backup.
+
+    Regression: the sentinel used to be a single GLOBAL gate under codex_dir,
+    so the first backup_once (e.g. an existing moonbridge-zai.yml during setup)
+    consumed it and every later config.toml backup became a no-op — leaving
+    config.toml rewritten with NO restorable .bak. The gate is now per-file.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_config(paths, b"CONFIG")
+    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
+    paths.moonbridge_yml.write_bytes(b"YML")
+
+    # Back up the yml FIRST (mirrors setup seeing an existing yml).
+    BackupCoordinator.backup_once(paths, _PathOnly(paths.moonbridge_yml))
+    # Then back up config.toml — must still produce its own .bak.
+    BackupCoordinator.backup_once(paths, _PathOnly(paths.config_toml))
+
+    yml_bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
+    cfg_bak = paths.config_toml.parent / (paths.config_toml.name + BAK_SUFFIX)
+    assert yml_bak.read_bytes() == b"YML"
+    assert cfg_bak.read_bytes() == b"CONFIG"  # NOT starved by the yml backup
 
 
 # --------------------------------------------------------------------------- #

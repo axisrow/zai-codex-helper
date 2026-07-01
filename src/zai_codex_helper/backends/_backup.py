@@ -58,7 +58,8 @@ class BackupCoordinator:
       present (D-11 one-line message; Plan 04-02's CLI path formats it).
 
     The coordinator never re-resolves paths: the sentinel lives at
-    ``paths.codex_dir / SENTINEL_NAME`` and the ``.bak`` is
+    ``paths.codex_dir / (backend.path.name + SENTINEL_NAME)`` (PER-FILE, so
+    each source has its own one-shot gate) and the ``.bak`` is
     ``backend.path.parent / (backend.path.name + BAK_SUFFIX)`` (always a
     sibling under the injected home — T-04-04).
     """
@@ -70,10 +71,11 @@ class BackupCoordinator:
         Load-bearing order (T-04-01: the sentinel check MUST be the very
         first IO, before any copy, so a re-run cannot re-copy):
 
-        1. Resolve the sentinel off ``paths.codex_dir`` (never hard-code
-           ``~/.codex``).
-        2. If the sentinel already exists, return immediately — the user
-           is already backed up and this run is a no-op (does NOT copy,
+        1. Resolve the PER-FILE sentinel off ``paths.codex_dir`` (never
+           hard-code ``~/.codex``), keyed by the source file name so each
+           file has an independent gate.
+        2. If this file's sentinel already exists, return immediately —
+           it is already backed up and this run is a no-op (does NOT copy,
            does NOT overwrite the ``.bak``, leaves the sentinel in place).
         3. Read ``backend.path`` (the source file).
         4. If the source does not exist, raise
@@ -100,12 +102,17 @@ class BackupCoordinator:
             backend: A :class:`ConfigBackend` whose ``.path`` is the
                 source file to back up.
         """
-        sentinel = paths.codex_dir / SENTINEL_NAME
+        # Per-file sentinel: each source file has its own one-shot gate, so
+        # backing up moonbridge-zai.yml does NOT gate-starve config.toml's
+        # backup (they are independent files with independent .bak siblings).
+        # A shared global sentinel would let the first backup_once no-op every
+        # later one, rewriting config.toml with no restorable .bak.
+        src: Path = backend.path
+        sentinel = paths.codex_dir / (src.name + SENTINEL_NAME)
         if sentinel.exists():
-            # Idempotency gate (D-27): already backed up — no-op.
+            # Idempotency gate (D-27): this file already backed up — no-op.
             return
 
-        src: Path = backend.path
         if not src.exists():
             # Nothing to back up (D-11): surface the problem, do NOT
             # silently create an empty .bak.

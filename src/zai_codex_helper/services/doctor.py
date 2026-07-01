@@ -309,15 +309,20 @@ def _check_port_open() -> CheckResult:
     )
 
 
-def _read_auth_token(paths: Paths) -> str | None:
-    """Read ``server.auth_token`` from ``moonbridge-zai.yml`` (None if absent).
+def _check_auth_token(paths: Paths) -> CheckResult | None:
+    """Diagnose ``server.auth_token`` in ``moonbridge-zai.yml`` (None if absent).
 
-    A foreign Moon Bridge config may set a local ``auth_token``; doctor must
-    send it as ``Authorization: Bearer <token>`` on the HTTP probes (checks
-    4/5), otherwise Moon Bridge rejects the probe with 401 — a FALSE failure
-    (the chain is fine; doctor just was not authenticated). Returns None for a
-    missing/unreadable/non-dict yml → probes go unauthenticated (canonical
-    helper yml has no auth_token; loopback needs none).
+    Codex authenticates with ``ZAI_API_KEY`` (the provider block's
+    ``env_key``), NOT with Moon Bridge's ``server.auth_token``. So if the
+    (foreign) yml sets ``auth_token``, Moon Bridge will reject Codex's real
+    requests with 401 — the exact break ``setup``/``set-key`` warn about.
+
+    doctor must therefore probe the chain EXACTLY as Codex does (no
+    ``auth_token`` header) and report a present ``auth_token`` as a FAIL, not
+    silently authenticate with it and turn the probe green (which would mask
+    the broken user-visible path). Returns a FAIL ``CheckResult`` when an
+    ``auth_token`` is set, else None (nothing to report — canonical helper yml
+    has none; loopback needs none).
     """
     backend = YamlBackend(paths)
     if not backend.exists():
@@ -329,7 +334,17 @@ def _read_auth_token(paths: Paths) -> str | None:
     if not isinstance(server, dict):
         return None
     token = server.get("auth_token")
-    return token if isinstance(token, str) and token else None
+    if not (isinstance(token, str) and token):
+        return None
+    return CheckResult(
+        name="Moon Bridge auth_token",
+        verdict="fail",
+        detail="server.auth_token is set — Codex sends ZAI_API_KEY, not this token",
+        fix_hint=(
+            "remove `server.auth_token` from moonbridge-zai.yml "
+            "(loopback needs no key) or Codex will get 401; then restart Moon Bridge"
+        ),
+    )
 
 
 def _check_get_models(client: httpx.Client, headers: dict | None = None) -> CheckResult:
@@ -725,11 +740,14 @@ def run_doctor(
         _emit(_check_binary(paths))
         _emit(_check_yml(paths))
         _emit(_check_port_open())
-        # If the (foreign) yml sets server.auth_token, authenticate the probes
-        # so doctor diagnoses the REAL state (200) instead of a false 401.
-        token = _read_auth_token(paths)
-        auth_headers = {"Authorization": f"Bearer {token}"} if token else None
-        _emit(_check_get_models(client, auth_headers))
+        # A present server.auth_token means Codex (which sends ZAI_API_KEY, not
+        # this token) will 401. Report it as a FAIL and probe the chain EXACTLY
+        # as Codex does — WITHOUT the auth_token header — so doctor diagnoses the
+        # real user-visible path instead of masking a 401 with a green probe.
+        auth_check = _check_auth_token(paths)
+        if auth_check is not None:
+            _emit(auth_check)
+        _emit(_check_get_models(client))
         _emit(_check_current_default(paths))
         _emit(_check_launchagent_loaded(paths, runner))
         _emit(_check_key_mode(paths))
@@ -740,10 +758,10 @@ def run_doctor(
         post_result: CheckResult | None
         if post_check_runner is not None:
             post_result = post_check_runner(
-                lambda: _check_post_responses(client, auth_headers)
+                lambda: _check_post_responses(client)
             )
         else:
-            post_result = _check_post_responses(client, auth_headers)
+            post_result = _check_post_responses(client)
         if post_result is None:
             post_result = CheckResult(
                 name="POST /v1/responses",

@@ -80,7 +80,8 @@ def uninstall_macro(
     # 1. config.toml → OpenAI default (model_provider removed; features restored).
     apply_pipeline(apply_openai, sys.stderr, dry_run=dry_run)
     # 2. Moon Bridge LaunchAgent down + plist removed (idempotent if absent).
-    uninstall_service(paths)
+    #    Forward dry_run so a preview never really boots out the agent.
+    uninstall_service(paths, dry_run=dry_run)
     # 3. Drop the secrets yml (no longer needed once Moon Bridge is gone).
     if dry_run:
         print(f"would remove {paths.moonbridge_yml}")

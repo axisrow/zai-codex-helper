@@ -107,6 +107,11 @@ def test_set_key_dry_run_redacts_and_writes_nothing(tmp_path, monkeypatch, capsy
     assert "redacted" in out.lower()
     data = yaml.safe_load(paths.moonbridge_yml.read_text())
     assert data["providers"]["zai"]["api_key"] == _OLD  # file unchanged
+    # --dry-run = ZERO writes: no .bak, no backup sentinel (regression — the
+    # old backup_once() ran before the dry_run guard and poisoned the gate).
+    files = {p.name for p in paths.codex_dir.iterdir()}
+    assert not any(name.endswith("backed-up") for name in files), files
+    assert not any(name.endswith(".bak") for name in files), files
 
 
 @pytest.mark.unit
