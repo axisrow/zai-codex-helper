@@ -29,7 +29,7 @@ def _seed_yml(paths: Paths, key: str = _OLD) -> None:
     the seed is a valid config Moon Bridge would accept.
     """
     from zai_codex_helper.backends.yaml import YamlBackend
-    from zai_codex_helper.services.setup import canonical_moonbridge_yml
+    from zai_codex_helper.services.moonbridge_yml import canonical_moonbridge_yml
 
     YamlBackend(paths).write_canonical(canonical_moonbridge_yml(key))
 

@@ -36,45 +36,23 @@ from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.diff_preview import preview_yml_change
 from zai_codex_helper.services.io import confirm
+from zai_codex_helper.services.moonbridge_yml import (
+    AUTH_TOKEN_LEFT_WARNING,
+    AUTH_TOKEN_PROMPT,
+    drop_auth_token,
+    set_api_key,
+    yml_has_auth_token,
+)
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.setup import _prompt_api_key, validate_api_key
 
 __all__ = [
     "set_key",
+    # re-exported from moonbridge_yml (owner) so existing importers still resolve.
     "yml_has_auth_token",
     "AUTH_TOKEN_PROMPT",
     "AUTH_TOKEN_LEFT_WARNING",
 ]
-
-#: The one-shot Yes/No prompt for dropping a foreign Moon Bridge auth_token
-#: (which would 401 Codex). Owned here (the auth_token vocabulary lives with
-#: yml_has_auth_token); setup imports it lazily to avoid the setup↔api_key cycle.
-AUTH_TOKEN_PROMPT = (
-    "Moon Bridge has a local auth_token set, which breaks Codex (401). "
-    "Switch Moon Bridge to localhost-only mode (remove the token)?"
-)
-
-#: The warning printed when the user DECLINES to drop the auth_token (set-key
-#: and setup both emit this verbatim). Single-sourced here alongside the prompt.
-AUTH_TOKEN_LEFT_WARNING = (
-    "warning: Moon Bridge auth_token left in place — Codex will likely "
-    "get 401. Remove `server.auth_token` to fix (loopback needs no key)."
-)
-
-
-def yml_has_auth_token(data) -> bool:
-    """True iff the parsed yml sets ``server.auth_token``.
-
-    A local ``auth_token`` makes Moon Bridge reject Codex's ``ZAI_API_KEY``
-    Bearer (Codex sends the Z.ai key, Moon Bridge expects the auth_token) →
-    401. The fix is to remove the token (loopback-only needs no local auth).
-    Narrow predicate: ONLY ``server.auth_token`` (``mode``/``providers``/
-    ``routes`` are harmless Moon Bridge config, not touched).
-    """
-    if not isinstance(data, dict):
-        return False
-    server = data.get("server", {})
-    return isinstance(server, dict) and "auth_token" in server
 
 
 def set_key(
@@ -144,22 +122,12 @@ def set_key(
         print_fn(AUTH_TOKEN_LEFT_WARNING)
         return 0
 
-    import copy
-
-    from zai_codex_helper.services.setup import _ZAI_PROVIDER_NAME
-
-    updated = copy.deepcopy(data)
-    # Remove the LEGACY top-level ZAI_API_KEY (added by old helper versions) —
-    # Moon Bridge rejects it with EX_CONFIG. The real key lives under
-    # providers.<name>.api_key.
-    updated.pop("ZAI_API_KEY", None)
-    # Ensure providers.<name>.api_key exists (create the nested structure if
-    # the foreign yml lacks a providers block), then set the new key.
-    providers = updated.setdefault("providers", {})
-    provider = providers.setdefault(_ZAI_PROVIDER_NAME, {})
-    provider["api_key"] = new_key
-    if drop_token and isinstance(updated.get("server"), dict):
-        updated["server"].pop("auth_token", None)
+    # Set providers.<name>.api_key (+ drop the legacy top-level ZAI_API_KEY) and,
+    # if consented, drop server.auth_token — the tree mutations are owned by
+    # moonbridge_yml, not open-coded here.
+    updated = set_api_key(data, new_key)
+    if drop_token:
+        updated = drop_auth_token(updated)
     if dry_run:
         # --dry-run = zero writes: preview and bail BEFORE backup_once (which
         # writes the .bak and consumes the global backup sentinel).

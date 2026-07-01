@@ -83,6 +83,7 @@ from zai_codex_helper.backends.toml import TomlBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.services.deps import detect_moonbridge_binary
 from zai_codex_helper.services.lifecycle import port_open, verify_service_loaded
+from zai_codex_helper.services.moonbridge_yml import yml_has_auth_token
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.providers import (
     MOONBRIDGE_HOST,
@@ -315,15 +316,13 @@ def _check_auth_token(paths: Paths) -> CheckResult | None:
     ``auth_token`` is set, else None (nothing to report — canonical helper yml
     has none; loopback needs none).
     """
-    from zai_codex_helper.services.api_key import yml_has_auth_token
-
     backend = YamlBackend(paths)
     if not backend.exists():
         return None
     # Reuse the one predicate that owns "where does auth_token live in the yml"
-    # (api_key.yml_has_auth_token) instead of re-walking the server-dict here.
-    # (yml_has_auth_token treats a present-but-empty token as set, matching
-    # api_key/setup — an empty auth_token is still a misconfigured foreign yml.)
+    # (moonbridge_yml.yml_has_auth_token) instead of re-walking the server-dict.
+    # (It treats a present-but-empty token as set, matching set-key/setup — an
+    # empty auth_token is still a misconfigured foreign yml.)
     if not yml_has_auth_token(backend.read()):
         return None
     return CheckResult(
@@ -750,9 +749,7 @@ def run_doctor(
         # block (tests, default). Aborted → WARN, not FAIL.
         post_result: CheckResult | None
         if post_check_runner is not None:
-            post_result = post_check_runner(
-                lambda: _check_post_responses(client)
-            )
+            post_result = post_check_runner(lambda: _check_post_responses(client))
         else:
             post_result = _check_post_responses(client)
         if post_result is None:
