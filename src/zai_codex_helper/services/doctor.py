@@ -16,7 +16,8 @@ The ordered check chain (DIAG-01, D-89):
      interruptible → WARN not FAIL).
 
 Codex Desktop detection (D-91, DIAG-03): ``pgrep`` check on darwin only → WARN
-if running (staleness hint). Models_cache check is READ-ONLY (Phase 15 writes).
+if running (staleness hint). ``models_cache.json`` is NOT checked here — it is
+Codex's OpenAI-model catalog, written (not read) by the Phase 15 fix.
 
 HTTP hard timeout (D-90, DIAG-02): both probes share one :class:`httpx.Client`
 with split timeouts (short connect, longer read) — bounds T-14-01/T-14-02.
