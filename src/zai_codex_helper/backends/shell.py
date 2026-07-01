@@ -275,6 +275,9 @@ class ShellBackend(ConfigBackend):
         takes only the fenced-block BODY and wraps it in the markers. Routes
         through ``self._write_via_atomic`` so this whole-file write, too, goes
         through the backend (no caller reaches around into ``atomic_write``).
-        ``mode=None`` preserves the file's existing permissions.
+
+        ``mode=None`` does NOT chmod — the destination lands at the atomic-write
+        tempfile's ``0o600`` (see :func:`atomic_write`), NOT the file's prior
+        mode. Pass an explicit ``mode`` (e.g. ``0o644``) to set one.
         """
         self._write_via_atomic(content, mode)

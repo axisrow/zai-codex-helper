@@ -84,7 +84,8 @@ def strip_foreign_codex_function(paths: Paths) -> bool:
     backend.backup_once()
     # Write the WHOLE .zshrc through the backend's raw whole-file surface (NOT
     # write_canonical, which wraps in the helper's marker fence). Routing through
-    # the backend keeps the "no write bypasses a backend" invariant structural;
-    # write_raw's default mode=None preserves the existing perms.
+    # the backend keeps the "no write bypasses a backend" invariant structural.
+    # mode=None here matches the prior atomic_write(mode=None) call byte-for-byte
+    # (the file lands at the tempfile's 0600 — unchanged from before this refactor).
     backend.write_raw(new)
     return True

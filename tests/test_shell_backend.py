@@ -239,8 +239,30 @@ def test_shell_write_raw_writes_verbatim_no_fence(tmp_path):
 
 
 @pytest.mark.unit
-def test_shell_write_raw_mode_none_preserves_existing_perms(tmp_path):
-    """``write_raw(mode=None)`` preserves the file's existing permissions."""
+def test_shell_write_raw_mode_none_lands_0600(tmp_path):
+    """``write_raw(mode=None)`` lands the file at 0600 (the atomic-write tempfile
+    default) regardless of the file's PRIOR mode — it does NOT chmod/preserve.
+
+    Seed at 0644 so this actually exercises the behavior: mode=None tightens it
+    to 0600 (matching atomic_write's contract). This is unchanged from the old
+    direct ``atomic_write(..., mode=None)`` the refactor replaced.
+    """
+    import os
+
+    zshrc = tmp_path / ".zshrc"
+    zshrc.write_text("old\n", encoding="utf-8")
+    os.chmod(zshrc, 0o644)  # a permissive prior mode
+    backend = ShellBackend(Paths.from_home(tmp_path))
+
+    backend.write_raw("new\n")
+
+    assert zshrc.read_text(encoding="utf-8") == "new\n"
+    assert (zshrc.stat().st_mode & 0o777) == 0o600  # mode=None → 0600, not 0644
+
+
+@pytest.mark.unit
+def test_shell_write_raw_explicit_mode(tmp_path):
+    """``write_raw`` honors an explicit mode (e.g. 0o644 to keep dotfile perms)."""
     import os
 
     zshrc = tmp_path / ".zshrc"
@@ -248,7 +270,6 @@ def test_shell_write_raw_mode_none_preserves_existing_perms(tmp_path):
     os.chmod(zshrc, 0o600)
     backend = ShellBackend(Paths.from_home(tmp_path))
 
-    backend.write_raw("new\n")
+    backend.write_raw("new\n", mode=0o644)
 
-    assert zshrc.read_text(encoding="utf-8") == "new\n"
-    assert (zshrc.stat().st_mode & 0o777) == 0o600  # unchanged
+    assert (zshrc.stat().st_mode & 0o777) == 0o644
