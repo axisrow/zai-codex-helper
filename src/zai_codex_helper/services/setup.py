@@ -62,6 +62,7 @@ from __future__ import annotations
 import getpass
 import os
 import re
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -335,8 +336,6 @@ def run_setup(
     # config.toml changed and Codex Desktop won't live-reload it. (This is why
     # `install`, which routes its provider write THROUGH run_setup, still warns
     # the user to restart — the old injected pipeline's warning lived here.)
-    import sys
-
     from zai_codex_helper.services.provider_apply import (
         apply_provider,
         render_apply_result,
