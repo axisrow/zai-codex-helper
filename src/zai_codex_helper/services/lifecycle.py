@@ -68,6 +68,7 @@ import socket
 import subprocess
 import sys
 from collections.abc import Callable
+from xml.parsers.expat import ExpatError
 
 # D-85 (SERV-03, load-bearing): import the Label, do NOT re-string it. The
 # ``is`` identity between lifecycle.LAUNCHAGENT_LABEL and backends.plist.LABEL
@@ -210,7 +211,11 @@ def _plist_drifted(paths: Paths) -> bool:
         return True
     try:
         on_disk = backend.read()
-    except (plistlib.InvalidFileException, OSError):
+    except (plistlib.InvalidFileException, ExpatError, OSError):
+        # plistlib.load() parses XML via the stdlib expat parser: a plist
+        # truncated mid-tag (e.g. an interrupted write) raises ExpatError, NOT
+        # InvalidFileException — both shapes of corruption must self-heal the
+        # same way (fall through to bootout→write→bootstrap), not crash.
         return True
     return on_disk != canonical_plist(paths)
 

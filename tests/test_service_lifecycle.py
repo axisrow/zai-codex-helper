@@ -1031,3 +1031,40 @@ def test_install_service_corrupted_plist_self_heals_via_bootstrap(
     from zai_codex_helper.backends.plist import PlistBackend, canonical_plist
 
     assert PlistBackend(paths).read() == canonical_plist(paths)
+
+
+@pytest.mark.unit
+def test_install_service_truncated_xml_plist_self_heals(tmp_path, monkeypatch):
+    """A plist truncated mid-XML-tag self-heals too (round-3 regression).
+
+    plistlib.load() parses XML via the stdlib expat parser: truncating a REAL
+    plist (e.g. an interrupted write) mid-tag raises xml.parsers.expat.ExpatError
+    — a different exception shape than garbage-bytes' InvalidFileException.
+    _plist_drifted must catch BOTH, or a truncated-XML plist crashes instead of
+    self-healing via bootout→write→bootstrap.
+    """
+    import plistlib
+
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
+    from zai_codex_helper.backends.plist import canonical_plist
+
+    full_xml = plistlib.dumps(canonical_plist(paths), fmt=plistlib.FMT_XML)
+    truncated = full_xml[: len(full_xml) // 2]  # cut mid-tag, not garbage bytes
+    (paths.launchagents_dir / "dev.zai.moonbridge.plist").write_bytes(truncated)
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootstrap" in a for a in argvs), argvs
