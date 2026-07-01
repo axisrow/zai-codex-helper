@@ -302,8 +302,12 @@ def run_setup(
     # `yes` short-circuits the prompt; without it we ask via confirm_fn.
     yml_backend = YamlBackend(paths)
     existing = yml_backend.read() if yml_backend.exists() else None
-    drop_token = yes or confirm_fn(AUTH_TOKEN_PROMPT)
-    if yml_has_auth_token(existing) and not drop_token:
+    # Keep confirm_fn gated BEHIND yml_has_auth_token — `and` short-circuits, so
+    # a fresh/canonical yml (no token) never prompts. The inner `yes or …` adds
+    # the headless auto-consent WITHOUT hoisting confirm_fn out of that gate (a
+    # separate `drop_token = yes or confirm_fn(...)` line would fire the prompt
+    # on every interactive run, even with no token — a spurious false prompt).
+    if yml_has_auth_token(existing) and not (yes or confirm_fn(AUTH_TOKEN_PROMPT)):
         print_fn(AUTH_TOKEN_LEFT_WARNING)
     elif dry_run:
         # D-95: preview the would-be moonbridge-zai.yml as a REDACTED diff (the
