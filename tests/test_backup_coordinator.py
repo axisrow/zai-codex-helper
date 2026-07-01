@@ -202,6 +202,78 @@ def test_backup_once_never_clobbers_existing_bak(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# T4c — the secrets .bak must be 0600 (holds the same spendable key)
+# --------------------------------------------------------------------------- #
+def _seed_secret_yml(paths: Paths, content: bytes = b"api_key: SECRET\n") -> None:
+    """Write ``content`` to ``paths.moonbridge_yml`` at 0600 (the secrets file)."""
+    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
+    paths.moonbridge_yml.write_bytes(content)
+    import os
+
+    os.chmod(paths.moonbridge_yml, 0o600)
+
+
+@pytest.mark.unit
+def test_backup_once_new_secret_bak_is_0600(tmp_path):
+    """A freshly created .bak of moonbridge-zai.yml is 0600 (explicit, not by luck).
+
+    The .bak holds the same spendable Z.ai key as the live yml, so a
+    world-readable .bak is a key leak. The secrets path passes an EXPLICIT
+    0o600 rather than relying on the tempfile default.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_secret_yml(paths)
+    backend = _PathOnly(paths.moonbridge_yml)
+
+    BackupCoordinator.backup_once(paths, backend)
+
+    bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
+    assert bak.exists()
+    assert (bak.stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.unit
+def test_backup_once_tightens_adopted_world_readable_secret_bak(tmp_path):
+    """An adopted pre-existing 0644 secrets .bak is chmod'd down to 0600.
+
+    Regression: a user with an old/manual world-readable
+    moonbridge-zai.yml.zai-codex-helper.bak (same key inside) — the never-clobber
+    guard adopts it, but must not leave the key world-readable.
+    """
+    import os
+
+    paths = Paths.from_home(tmp_path)
+    _seed_secret_yml(paths)
+    backend = _PathOnly(paths.moonbridge_yml)
+    bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
+    # A pre-existing world-readable .bak holding the key.
+    bak.write_bytes(b"api_key: OLD_SECRET\n")
+    os.chmod(bak, 0o644)
+
+    BackupCoordinator.backup_once(paths, backend)
+
+    # Adopted (content untouched) BUT tightened to 0600.
+    assert bak.read_bytes() == b"api_key: OLD_SECRET\n"
+    assert (bak.stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.unit
+def test_backup_once_rejects_symlinked_secret_bak(tmp_path):
+    """A symlinked secrets .bak is refused (write/chmod-redirect gadget)."""
+    paths = Paths.from_home(tmp_path)
+    _seed_secret_yml(paths)
+    backend = _PathOnly(paths.moonbridge_yml)
+    bak = paths.moonbridge_yml.parent / (paths.moonbridge_yml.name + BAK_SUFFIX)
+    # Plant a symlink where the .bak would go.
+    target = tmp_path / "elsewhere"
+    target.write_bytes(b"x")
+    bak.symlink_to(target)
+
+    with pytest.raises(ZaiCodexHelperError):
+        BackupCoordinator.backup_once(paths, backend)
+
+
+# --------------------------------------------------------------------------- #
 # T4b — per-file gate: one file's backup does NOT starve another's (regression)
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit

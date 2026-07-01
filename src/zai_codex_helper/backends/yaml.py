@@ -11,9 +11,10 @@ forget to restrict the file. The restriction is structural, not conventional.
 
 Why the explicit ``0o600`` (not ``mode=None``):
 
-- ``atomic_write(mode=None)`` does NOT preserve an existing destination mode —
-  it inherits the temp file's umask-governed mode (Phase 5 ``deferred-items.md``
-  D-DEFERRED-01). Relying on ``mode=None`` for a secrets file would be fragile.
+- ``atomic_write(mode=None)`` inherits the temp file's mode. That happens to be
+  ``0o600`` today (``mkstemp`` is umask-independent), but relying on that default
+  for a SECRETS file is fragile — a future tempfile/impl change could widen it to
+  a world-readable key. So the secrets path does NOT lean on the default.
 - The secrets path therefore passes an EXPLICIT ``0o600``. Verified empirically
   that ``atomic_write(mode=0o600)`` correctly chmods the destination to
   ``0o600`` after the atomic replace. The explicit arg is both safe and

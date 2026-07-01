@@ -12,8 +12,9 @@ risks disturbing already-configured state. ``set-key`` touches only the key.
 
 The key source + validation mirror ``setup`` exactly:
   - ``ZAI_API_KEY`` env wins (headless / scripting);
-  - otherwise echoed interactive input with up to 3 retries on a malformed
-    key (see :func:`zai_codex_helper.services.setup._prompt_api_key`);
+  - otherwise HIDDEN interactive input via ``getpass`` (never echoed — SECR-01)
+    with up to 3 retries on a malformed key (see
+    :func:`zai_codex_helper.services.setup._prompt_api_key`);
   - every key is validated via
     :func:`zai_codex_helper.services.setup.validate_api_key` (strict
     ``<32-hex>.<16-alnum>`` Z.ai format) BEFORE it is written.
