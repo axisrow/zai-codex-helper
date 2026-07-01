@@ -289,7 +289,11 @@ def _handle_install_service(args: argparse.Namespace) -> int:
     # Phase 15 (D-95): forward the root --dry-run flag so
     # `install-service --dry-run` prints a "would write plist + bootstrap"
     # summary and writes/calls nothing.
-    return install_service(paths, dry_run=getattr(args, "dry_run", False))
+    return install_service(
+        paths,
+        dry_run=getattr(args, "dry_run", False),
+        force=getattr(args, "force", False),
+    )
 
 
 def _handle_uninstall_service(args: argparse.Namespace) -> int:
@@ -385,6 +389,7 @@ def _handle_install(args: argparse.Namespace) -> int:
         paths,
         dry_run=getattr(args, "dry_run", False),
         headless=getattr(args, "yes", False) or getattr(args, "no_input", False),
+        force=getattr(args, "force", False),
     )
     return 0
 
@@ -603,6 +608,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="turn Z.ai ON end-to-end (setup + config + Moon Bridge)",
         parents=[sub_flags],
     )
+    p_install.add_argument(
+        "--force",
+        action="store_true",
+        help="reinstall the LaunchAgent even if already running (bounces the service)",
+    )
     p_install.set_defaults(func=_handle_install)
     p_uninstall = subparsers.add_parser(
         "uninstall",
@@ -624,6 +634,11 @@ def build_parser() -> argparse.ArgumentParser:
         "install-service",
         help="install the Moon Bridge LaunchAgent",
         parents=[sub_flags],
+    )
+    p_install.add_argument(
+        "--force",
+        action="store_true",
+        help="reinstall even if already running (bounces the service)",
     )
     p_install.set_defaults(func=_handle_install_service)
     p_uninstall = subparsers.add_parser(

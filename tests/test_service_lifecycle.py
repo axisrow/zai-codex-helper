@@ -793,9 +793,9 @@ def test_handle_install_service_delegates_to_services_layer(tmp_path, monkeypatc
         rc = args.func(args)
 
     assert rc == 0
-    # Phase 15 (D-95): the handler now forwards the root --dry-run flag.
-    # Default (no --dry-run) -> dry_run=False, preserving the prior behavior.
-    spy.assert_called_once_with(fake_paths, dry_run=False)
+    # Phase 15 (D-95): the handler forwards the root --dry-run flag; Q2 (#10)
+    # adds the --force flag. Defaults (neither passed) -> dry_run/force False.
+    spy.assert_called_once_with(fake_paths, dry_run=False, force=False)
 
 
 @pytest.mark.unit
@@ -843,3 +843,115 @@ def test_handle_uninstall_service_forwards_dry_run(tmp_path, monkeypatch):
 
     assert rc == 0
     spy.assert_called_once_with(fake_paths, dry_run=True)
+
+
+# ---------------------------------------------------------------------------
+# Q2 / #10 — convergent install_service (no-bounce when converged) + --force
+# ---------------------------------------------------------------------------
+
+
+def _seed_canonical_plist(paths):
+    """Write the canonical plist to disk so _plist_drifted() is False."""
+    from zai_codex_helper.backends.plist import PlistBackend, canonical_plist
+
+    PlistBackend(paths).write_canonical(canonical_plist(paths))
+
+
+@pytest.mark.unit
+def test_install_service_converged_is_noop_no_bounce(tmp_path, monkeypatch):
+    """Already loaded + plist matches canonical → NO bootout/bootstrap (no bounce)."""
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    _seed_canonical_plist(paths)  # on-disk plist == canonical → not drifted
+    _patch_port(monkeypatch, connects=True)  # verify's port probe connects
+    # print (from verify) returns loaded; if any bootout/bootstrap runs, the test
+    # fails on the assertion below.
+    runner, captured = _recording_runner(
+        responses=[_ok(["launchctl", "print"], "state = running")]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    # The ONLY launchctl call is the verify `print` — never bootout/bootstrap.
+    assert not any("bootout" in a for a in argvs), argvs
+    assert not any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_force_bounces_even_when_converged(tmp_path, monkeypatch):
+    """--force reinstalls (bootout+bootstrap) even on a converged, running agent."""
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    _seed_canonical_plist(paths)
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner, force=True)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootout" in a for a in argvs), argvs
+    assert any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_drift_bounces(tmp_path, monkeypatch):
+    """Loaded but the on-disk plist drifted → bootout+bootstrap (re-apply)."""
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    # Seed a DRIFTED plist (not canonical) so _plist_drifted() is True.
+    paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
+    (paths.launchagents_dir / "dev.zai.moonbridge.plist").write_text(
+        "<?xml version='1.0'?><plist><dict><key>Label</key>"
+        "<string>stale</string></dict></plist>",
+        encoding="utf-8",
+    )
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_fresh_not_loaded_bootstraps(tmp_path, monkeypatch):
+    """Not loaded (fresh) → bootstrap runs (convergence gate falls through)."""
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    # No plist on disk → _plist_drifted() is True → the convergence gate is
+    # skipped BEFORE any verify probe; install proceeds straight to bootstrap.
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),  # post-install verify
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootstrap" in a for a in argvs), argvs
