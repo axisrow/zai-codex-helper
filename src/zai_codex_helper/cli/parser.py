@@ -25,59 +25,14 @@ subcommand.
 import argparse
 import sys
 
+# The restart-warning + result-render helpers now live in the services layer
+# (services.provider_apply) so the ``uninstall`` macro can surface them without a
+# services→cli import. Re-exported here under their historical private names so
+# the ``use`` handlers, the TUI, and existing tests keep resolving them.
+from zai_codex_helper.services.provider_apply import (  # noqa: E402
+    render_apply_result as _render_apply_result,
+)
 
-def _emit_restart_warning(stream) -> None:
-    """Write a hard-to-miss restart warning to ``stream`` (D-47, PROV-04).
-
-    After every successful ``use zai`` / ``use openai`` write the user MUST be
-    told that the Codex Desktop App does NOT live-reload ``config.toml`` — a
-    user who opens a new Desktop App thread without restarting will still see
-    the old default and conclude ``use zai`` silently failed. This warning is
-    the UX-critical guard against that. PROV-04.
-
-    The warning conveys the three D-47 facts:
-      (a) the config WAS written (the change is on disk),
-      (b) the Codex Desktop App does NOT live-reload ``config.toml``,
-      (c) a restart is required for the new default to take effect.
-    It also notes the one nuance: the ``codex`` CLI picks the change up on its
-    NEXT invocation (no restart needed for the CLI), but the Desktop App needs
-    a full restart.
-
-    The stream is taken as a parameter (NOT a hard-coded ``sys.stderr`` inside
-    the helper) so a test can capture it via ``capsys`` or pass a fake stream —
-    this is the testability seam. The CALLER passes ``sys.stderr`` so the
-    warning is visible even when stdout is piped (D-47 "goes to stderr").
-
-    Plain text + ANSI (per CLAUDE.md D-04/D-05, no Rich). The leading ``⚠``
-    glyph + UPPERCASE prefix make it impossible to miss in a terminal.
-    """
-    # ANSI: bold + yellow for the header, reset after. Plain text otherwise —
-    # no Rich (CLAUDE.md D-04/D-05). Glyph + UPPERCASE prefix = hard to miss.
-    stream.write(
-        "\n"
-        "\033[1;33m⚠  RESTART REQUIRED\033[0m\n"
-        "config.toml was written. The Codex Desktop App does NOT live-reload\n"
-        "config.toml — you must restart Codex for the new default to take\n"
-        "effect. The `codex` CLI picks up the change on its next invocation\n"
-        "(no restart needed for the CLI); the Codex Desktop App needs a full\n"
-        "restart.\n"
-    )
-
-
-def _render_apply_result(result, warn_stream) -> None:
-    """Render a :class:`ProviderApplyResult` to ``warn_stream`` exactly once.
-
-    The provider-apply primitive (``services.provider_apply.apply_provider``)
-    does the write and returns a result; the CLI decides what the user sees:
-    a dry-run diff, OR the D-47/PROV-04 restart warning after a real write.
-    This is the single place the warning is emitted for the ``use`` handlers
-    (and TUI toggle), replacing the old inline pipeline that printed itself.
-    """
-    if result.dry_run_diff is not None:
-        print(result.dry_run_diff, file=warn_stream)
-        return
-    if result.desktop_restart_required:
-        _emit_restart_warning(warn_stream)
 
 def _handle_use_zai(args: argparse.Namespace) -> int:
     """Make Z.ai (``glm-5.2``, ``xhigh``) the Codex default (D-45, PROV-01).

@@ -114,9 +114,7 @@ def test_set_key_reads_key_via_getpass_not_input(tmp_path, monkeypatch):
         called["getpass"] = True
         return _NEW
 
-    rc = api_key.set_key(
-        paths, environ=dict(os.environ), getpass_fn=fake_getpass
-    )
+    rc = api_key.set_key(paths, environ=dict(os.environ), getpass_fn=fake_getpass)
 
     assert rc == 0
     assert called["getpass"] is True

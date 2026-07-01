@@ -8,13 +8,9 @@ primitives:
 - Phase 2 :class:`~zai_codex_helper.services.paths.Paths` (resolved paths).
 - Phase 4 :meth:`~zai_codex_helper.backends.base.ConfigBackend.backup_once`
   (the sentinel-gated one-shot ``.bak``).
-- Phase 5/6/7 the provider write pipeline
-  (:class:`~zai_codex_helper.backends.toml.TomlBackend` +
-  :func:`~zai_codex_helper.services.providers.apply_zai` /
-  :func:`~zai_codex_helper.services.providers.apply_openai` +
-  :func:`~zai_codex_helper.services.providers.check_postconditions`), INLINED
-  here so the ``cli`` layer never imports ``services`` importing ``cli`` (no
-  circular dependency — D-81).
+- Phase 5/6/7 the provider write via the shared services primitive
+  :func:`~zai_codex_helper.services.provider_apply.apply_provider` (STEP 6) —
+  the ONE pipeline the ``use`` handlers and ``install`` also call (no cli import).
 - Phase 9 :class:`~zai_codex_helper.backends.yaml.YamlBackend` (the secrets file
   at ``0600``) and :class:`~zai_codex_helper.backends.shell.ShellBackend` (the
   ``.zshrc`` marker fence).
@@ -168,6 +164,7 @@ def run_setup(
     *,
     yes: bool = False,
     dry_run: bool = False,
+    provider: str | None = None,
     input_fn: Callable[[str], str] = input,
     getpass_fn: Callable[[str], str] = getpass.getpass,
     confirm_fn: Callable[..., bool] = confirm,
@@ -190,6 +187,11 @@ def run_setup(
             as consented, API key REQUIRED from ``ZAI_API_KEY`` env.
         dry_run: Preview mode (D-76). When ``True`` each step prints what it
             WOULD do via ``print_fn`` and skips every mutating call.
+        provider: Explicit provider override (``"zai"`` / ``"openai"``). When
+            set, STEP 1 uses it and SKIPS the prompt — ``install_macro`` passes
+            ``"zai"`` so ``install`` always ends Z.ai-on regardless of any
+            interactive choice. ``None`` (default) → prompt (or ``"zai"`` under
+            ``yes``).
         input_fn: The provider-choice input source (default builtin ``input``).
         getpass_fn: The API-key input source (default ``getpass.getpass`` —
             never echoes; SECR-01).
@@ -215,7 +217,14 @@ def run_setup(
     # ------------------------------------------------------------------ #
     # STEP 1 (D-76) — PROVIDER CHOICE.
     # ------------------------------------------------------------------ #
-    if yes:
+    if provider is not None:
+        # Explicit override (install_macro forces "zai" so `install` ALWAYS ends
+        # Z.ai-on regardless of any interactive choice). No prompt, no default.
+        if provider not in _VALID_PROVIDERS:
+            raise ZaiCodexHelperError(
+                f"invalid provider {provider!r} — expected one of {_VALID_PROVIDERS}"
+            )
+    elif yes:
         # D-79: headless mode → provider is the documented default, no prompt.
         provider = "zai"
     else:
@@ -384,5 +393,3 @@ def run_setup(
     if launch_consent:
         print_fn("LaunchAgent: run install-service to enable auto-start.")
     return 0
-
-

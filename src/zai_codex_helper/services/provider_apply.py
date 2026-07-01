@@ -30,7 +30,12 @@ from zai_codex_helper.services.diff_preview import compute_diff
 from zai_codex_helper.services.paths import Paths
 from zai_codex_helper.services.providers import check_postconditions
 
-__all__ = ["ProviderApplyResult", "apply_provider"]
+__all__ = [
+    "ProviderApplyResult",
+    "apply_provider",
+    "render_restart_warning",
+    "render_apply_result",
+]
 
 
 @dataclass(frozen=True)
@@ -116,3 +121,39 @@ def apply_provider(
         dry_run_diff=None,
         desktop_restart_required=True,
     )
+
+
+def render_restart_warning(stream) -> None:
+    """Write the D-47/PROV-04 "restart Codex Desktop" warning to ``stream``.
+
+    After a real provider write the Codex Desktop App does NOT live-reload
+    config.toml — a user who opens a new Desktop thread without restarting sees
+    the OLD default and thinks the switch failed. This is the UX guard. The
+    ``codex`` CLI picks the change up on its next invocation (no restart); only
+    the Desktop App needs a full restart. Plain text + ANSI (no Rich). ``stream``
+    is a parameter (not hard-coded stderr) so callers/tests choose the sink.
+    """
+    stream.write(
+        "\n"
+        "\033[1;33m⚠  RESTART REQUIRED\033[0m\n"
+        "config.toml was written. The Codex Desktop App does NOT live-reload\n"
+        "config.toml — you must restart Codex for the new default to take\n"
+        "effect. The `codex` CLI picks up the change on its next invocation\n"
+        "(no restart needed for the CLI); the Codex Desktop App needs a full\n"
+        "restart.\n"
+    )
+
+
+def render_apply_result(result: ProviderApplyResult, stream) -> None:
+    """Render an :class:`ProviderApplyResult` to ``stream`` exactly once.
+
+    Dry-run → print the diff; a real write → the restart warning. The single
+    place the provider-apply user-visible output is emitted, shared by the CLI
+    ``use`` handlers, the TUI toggle, and the ``uninstall`` macro (so uninstall,
+    too, surfaces its config-revert diff / restart notice).
+    """
+    if result.dry_run_diff is not None:
+        print(result.dry_run_diff, file=stream)
+        return
+    if result.desktop_restart_required:
+        render_restart_warning(stream)

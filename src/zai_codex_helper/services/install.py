@@ -41,9 +41,10 @@ def install_macro(
 
     # 1. Canonical yml + binary + models_cache + shell helpers, AND apply the
     #    Z.ai provider to config.toml — run_setup does the provider apply in its
-    #    STEP 6. (No separate apply here: doing it again would write config.toml
-    #    twice — the #6 root cause.)
-    run_setup(paths, yes=headless, dry_run=dry_run)
+    #    STEP 6. `provider="zai"` FORCES Z.ai even when run_setup would otherwise
+    #    prompt (interactive install, headless=False): `install` must ALWAYS end
+    #    Z.ai-on. (One apply, inside setup — no double write, the #6 fix.)
+    run_setup(paths, yes=headless, provider="zai", dry_run=dry_run)
     # 2. Strip a foreign `codex () { --profile zai-glm ... }` shim if present —
     #    it shadows a bare `codex` (--profile > config default).
     if not dry_run:
@@ -59,13 +60,20 @@ def uninstall_macro(paths: Paths, *, dry_run: bool = False) -> None:
         paths: resolved Paths bundle.
         dry_run: preview each step without writing.
     """
+    import sys
+
     from zai_codex_helper.services.lifecycle import uninstall_service
-    from zai_codex_helper.services.provider_apply import apply_provider
+    from zai_codex_helper.services.provider_apply import (
+        apply_provider,
+        render_apply_result,
+    )
     from zai_codex_helper.services.providers import apply_openai
 
     # 1. config.toml → OpenAI default (model_provider removed; features restored).
-    #    No restart warning here — uninstall prints its own removal summary.
-    apply_provider(paths, apply_openai, dry_run=dry_run)
+    #    Render the result once: dry-run shows the config-revert diff; a real
+    #    revert emits the restart warning (Codex Desktop won't live-reload).
+    result = apply_provider(paths, apply_openai, dry_run=dry_run)
+    render_apply_result(result, sys.stderr)
     # 2. Moon Bridge LaunchAgent down + plist removed (idempotent if absent).
     #    Forward dry_run so a preview never really boots out the agent.
     uninstall_service(paths, dry_run=dry_run)

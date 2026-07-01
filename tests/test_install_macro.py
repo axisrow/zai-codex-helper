@@ -77,12 +77,95 @@ def test_uninstall_macro_real_run_removes_yml(tmp_path, monkeypatch):
         "zai_codex_helper.services.lifecycle.uninstall_service",
         fake_uninstall_service,
     )
+    from zai_codex_helper.services.provider_apply import ProviderApplyResult
+
     monkeypatch.setattr(
         "zai_codex_helper.services.provider_apply.apply_provider",
-        lambda p, transform, *, dry_run=False: None,
+        lambda p, transform, *, dry_run=False: ProviderApplyResult(
+            config_changed=True, dry_run_diff=None, desktop_restart_required=True
+        ),
     )
 
     install.uninstall_macro(paths, dry_run=False)
 
     assert seen["dry_run"] is False
     assert not paths.moonbridge_yml.exists()  # yml removed on a real run
+
+
+def _precreate_binary(tmp_path):
+    """Pre-create the Moon Bridge binary so run_setup's build step is skipped."""
+    import os
+    import stat
+
+    binary = tmp_path / ".codex" / "bin" / "moonbridge"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"#!/bin/sh\nexit 0\n")
+    os.chmod(binary, 0o755)
+    assert binary.stat().st_mode & stat.S_IXUSR
+
+
+@pytest.mark.unit
+def test_run_setup_provider_override_forces_zai_over_prompt(tmp_path, monkeypatch):
+    """C1 regression: run_setup(provider="zai") applies Z.ai even if stdin says openai.
+
+    install_macro passes provider="zai" so `install` ALWAYS ends Z.ai-on
+    regardless of the interactive provider choice — the old step-3 apply_zai that
+    guaranteed this was removed, and the provider override replaces it. This tests
+    the override at the run_setup seam (install_macro's non-provider prompts —
+    shell/LaunchAgent consent — are covered by test_setup.py's headless flow).
+    """
+    import tomllib
+
+    from zai_codex_helper.services.setup import run_setup
+
+    _precreate_binary(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+
+    # Provider prompt would answer "openai"; consents auto-yes. provider="zai"
+    # must win — the prompt is skipped entirely.
+    run_setup(
+        paths,
+        provider="zai",
+        input_fn=lambda _p: "openai",
+        confirm_fn=lambda *_a, **_k: True,
+    )
+
+    doc = tomllib.loads(paths.config_toml.read_text(encoding="utf-8"))
+    assert doc["model_provider"] == "zai-moonbridge"  # Z.ai, not OpenAI
+
+
+@pytest.mark.unit
+def test_uninstall_dry_run_shows_config_diff(tmp_path, monkeypatch, capsys):
+    """C2 regression: `uninstall --dry-run` surfaces the config-revert diff.
+
+    The old injected pipeline printed the diff; after the refactor uninstall_macro
+    must render the ProviderApplyResult so the preview is not silently dropped.
+    """
+    # Seed a Z.ai config so the revert-to-OpenAI diff is non-empty.
+    paths = Paths.from_home(tmp_path)
+    paths.config_toml.write_text(
+        'model = "glm-5.2"\nmodel_provider = "zai-moonbridge"\n'
+        '[model_providers.zai-moonbridge]\nbase_url = "http://127.0.0.1:38440/v1"\n',
+        encoding="utf-8",
+    )
+    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
+    paths.moonbridge_yml.write_text("providers: {}\n")
+
+    def fake_uninstall_service(p, *, dry_run=False, **_kw):
+        return 0
+
+    monkeypatch.setattr(
+        "zai_codex_helper.services.lifecycle.uninstall_service",
+        fake_uninstall_service,
+    )
+
+    install.uninstall_macro(paths, dry_run=True)
+
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    # The config-revert diff was surfaced (not silently dropped). The target
+    # header names config.toml; the revert removes the model_provider pointer.
+    assert "config.toml" in combined
