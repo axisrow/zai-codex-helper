@@ -59,12 +59,13 @@ both Codex CLI and the Desktop app read — starts on Z.ai.
 
 ## Flags
 
-Global flags work **both before and after** the subcommand:
+Global flags are accepted **both before and after** the subcommand:
 
 - `--dry-run` — preview every change as a diff; writes nothing.
-- `--yes` / `--no-input` — headless: skip prompts (requires `ZAI_API_KEY` in the
-  environment for the key).
 - `--debug` — print a full traceback instead of the one-line `error: <msg>`.
+- `--yes` / `--no-input` — headless mode for the interactive flows (`setup`,
+  `install`): skip all prompts, taking the key from `ZAI_API_KEY` in the
+  environment. Commands that don't prompt ignore these flags.
 
 `install` and `install-service` are **convergent**: a repeat run on a healthy,
 already-installed setup does nothing (it won't bounce a running Moon Bridge).
