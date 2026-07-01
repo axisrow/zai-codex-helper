@@ -30,6 +30,7 @@ here without rework.
 from __future__ import annotations
 
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -49,7 +50,13 @@ def atomic_write(path: str | Path, data: bytes | str, mode: int | None = None) -
        same-filesystem rename (atomic on POSIX/macOS; T-03-06).
     4. Write ``data`` (``str`` encoded UTF-8), ``flush()``, ``os.fsync(fd)``
        (load-bearing durability call).
-    5. Close the temp, then ``os.replace(temp, path)`` (atomic overwrite).
+    5. Close the temp; if a real EMPTY directory sits at ``path`` (which
+       ``os.replace`` cannot overwrite with a file), ``os.rmdir`` it first — an
+       empty dir at a wholesale-write destination is corruption to clear. A
+       NON-empty dir is refused (ENOTEMPTY → cleanup + re-raise): this generic
+       primitive never recursively deletes a tree that may hold user data or a
+       mount point. Symlinks are NOT followed/removed. Then
+       ``os.replace(temp, path)`` (atomic overwrite).
     6. If ``mode is not None``, ``os.chmod(path, mode)`` AFTER replace (chmod
        the destination, never the temp — a crash between replace and chmod
        leaves a correctly-replaced file with old perms, not a half-applied
@@ -89,6 +96,25 @@ def atomic_write(path: str | Path, data: bytes | str, mode: int | None = None) -
         tmp.close()
 
     try:
+        # os.replace CANNOT overwrite a directory with a file (raises
+        # IsADirectoryError), so an EMPTY directory left at the destination — by
+        # a botched write, a git-checkout collision, or manual tampering — would
+        # crash every backend that routes here. Clear ONLY an empty directory,
+        # and ONLY with os.rmdir (never shutil.rmtree): rmdir removes an empty
+        # dir and REFUSES a non-empty one (ENOTEMPTY). That is deliberate — a
+        # non-empty directory at a config-file path holds data this generic
+        # write primitive must NOT recursively destroy (a mount point, or files
+        # a user put there); it fails loudly into the cleanup below instead of
+        # silently deleting a tree. lstat (does NOT follow symlinks) gates on a
+        # REAL directory, so a symlink-to-dir is left for os.replace to overwrite
+        # (the link itself, not its target); a regular file / FIFO / socket /
+        # device is likewise left for os.replace.
+        try:
+            st = os.lstat(dest)
+        except OSError:
+            st = None  # dest absent (fresh write) or unstattable → let replace decide
+        if st is not None and stat.S_ISDIR(st.st_mode):
+            os.rmdir(dest)  # empty-only; ENOTEMPTY → cleanup + re-raise (no data loss)
         os.replace(tmp_name, str(dest))  # atomic overwrite on POSIX/macOS
     except BaseException:
         # replace failed → unlink the temp so no orphan survives (T-03-05),

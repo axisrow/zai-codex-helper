@@ -994,66 +994,68 @@ def test_install_service_converged_repairs_plist_mode_without_bounce(
     assert not any("bootstrap" in a for a in argvs), argvs
 
 
+# Every unreadable/unwritable on-disk-plist shape must self-heal (drift → rewrite),
+# never crash install_service. Each `seed` is either literal bytes to write, the
+# sentinel "dir" (a directory at the plist path → IsADirectoryError on read AND
+# an os.replace target the atomic-write dir-clear must handle), or "truncated"
+# (a real plist cut mid-XML-tag, computed per-test because it needs canonical_plist).
+# The <integer>/<date> bodies are the #14 gap: plistlib raises ValueError /
+# AttributeError on them — NEITHER was in the old (InvalidFileException, ExpatError,
+# OSError) tuple, so both crashed install before the broad-catch. (Exception shapes
+# verified empirically on 3.10-3.13.)
+_GARBAGE_PLIST = b"not a plist at all, truncated garbage"  # InvalidFileException
+_BAD_INTEGER_PLIST = (  # ValueError
+    b'<?xml version="1.0"?>'
+    b'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+    b'"http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+    b'<plist version="1.0"><dict><key>N</key>'
+    b"<integer>notanumber</integer></dict></plist>"
+)
+_BAD_DATE_PLIST = (  # AttributeError
+    b'<?xml version="1.0"?><plist version="1.0"><dict><key>N</key>'
+    b"<date>notadate</date></dict></plist>"
+)
+
+
 @pytest.mark.unit
-def test_install_service_corrupted_plist_self_heals_via_bootstrap(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize(
+    "shape,seed",
+    [
+        ("garbage-bytes", _GARBAGE_PLIST),  # InvalidFileException
+        ("truncated-xml", "truncated"),  # ExpatError (computed in-test)
+        ("bad-integer", _BAD_INTEGER_PLIST),  # ValueError (old tuple missed it)
+        ("bad-date", _BAD_DATE_PLIST),  # AttributeError (old tuple missed it)
+        ("directory", "dir"),  # IsADirectoryError + os.replace dir-clear
+    ],
+)
+def test_install_service_unreadable_plist_shapes_self_heal(
+    tmp_path, monkeypatch, shape, seed
 ):
-    """A truncated/malformed on-disk plist is treated as drifted, not a crash.
+    """#14: every unreadable/unwritable plist shape is drift → self-heal, not a crash.
 
-    Before the convergence gate, install unconditionally rewrote the plist, so a
-    corrupted file self-healed on the next install. _plist_drifted's read() can
-    raise plistlib.InvalidFileException on malformed bytes — that must be caught
-    and treated as drift (NOT let the exception crash install_service), so the
-    corrupted plist still gets bootout→write→bootstrap.
-    """
-    _darwin(monkeypatch)
-    _uid(monkeypatch, 501)
-    paths = Paths.from_home(tmp_path)
-    paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
-    (paths.launchagents_dir / "dev.zai.moonbridge.plist").write_bytes(
-        b"not a plist at all, truncated garbage"
-    )
-    _patch_port(monkeypatch, connects=True)
-    runner, captured = _recording_runner(
-        responses=[
-            _ok(["launchctl", "bootout"]),
-            _ok(["launchctl", "bootstrap"]),
-            _ok(["launchctl", "print"], "state = running"),
-        ]
-    )
-
-    rc = lifecycle.install_service(paths, runner=runner)
-
-    assert rc == 0
-    argvs = [c["argv"] for c in captured]
-    assert any("bootstrap" in a for a in argvs), argvs
-    # The plist on disk is now valid canonical content (self-healed).
-    from zai_codex_helper.backends.plist import PlistBackend, canonical_plist
-
-    assert PlistBackend(paths).read() == canonical_plist(paths)
-
-
-@pytest.mark.unit
-def test_install_service_truncated_xml_plist_self_heals(tmp_path, monkeypatch):
-    """A plist truncated mid-XML-tag self-heals too (round-3 regression).
-
-    plistlib.load() parses XML via the stdlib expat parser: truncating a REAL
-    plist (e.g. an interrupted write) mid-tag raises xml.parsers.expat.ExpatError
-    — a different exception shape than garbage-bytes' InvalidFileException.
-    _plist_drifted must catch BOTH, or a truncated-XML plist crashes instead of
-    self-healing via bootout→write→bootstrap.
+    Consolidates the garbage-bytes / truncated-XML regressions with the shapes the
+    old enumerated except-tuple missed: malformed <integer>/<date> (ValueError /
+    AttributeError) and a directory at the plist path. _plist_drifted's broad
+    `except Exception` treats every read failure as drift, and atomic_write clears
+    a directory at the dest, so install_service always falls through to
+    bootout→write→bootstrap and lands canonical content — never crashes.
     """
     import plistlib
 
+    from zai_codex_helper.backends.plist import PlistBackend, canonical_plist
+
     _darwin(monkeypatch)
     _uid(monkeypatch, 501)
     paths = Paths.from_home(tmp_path)
     paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
-    from zai_codex_helper.backends.plist import canonical_plist
-
-    full_xml = plistlib.dumps(canonical_plist(paths), fmt=plistlib.FMT_XML)
-    truncated = full_xml[: len(full_xml) // 2]  # cut mid-tag, not garbage bytes
-    (paths.launchagents_dir / "dev.zai.moonbridge.plist").write_bytes(truncated)
+    plist_path = paths.launchagents_dir / "dev.zai.moonbridge.plist"
+    if seed == "dir":
+        plist_path.mkdir()  # empty dir → atomic_write os.rmdir's it (non-empty is refused)
+    elif seed == "truncated":
+        full_xml = plistlib.dumps(canonical_plist(paths), fmt=plistlib.FMT_XML)
+        plist_path.write_bytes(full_xml[: len(full_xml) // 2])  # cut mid-tag
+    else:
+        plist_path.write_bytes(seed)
     _patch_port(monkeypatch, connects=True)
     runner, captured = _recording_runner(
         responses=[
@@ -1068,3 +1070,5 @@ def test_install_service_truncated_xml_plist_self_heals(tmp_path, monkeypatch):
     assert rc == 0
     argvs = [c["argv"] for c in captured]
     assert any("bootstrap" in a for a in argvs), argvs
+    # Every shape self-heals to canonical content on disk.
+    assert PlistBackend(paths).read() == canonical_plist(paths)
