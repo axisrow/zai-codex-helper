@@ -52,6 +52,7 @@ NO_CHANGES = "(no changes)"
 #: NEVER reaches stdout when the setup dry-run branch previews the yml.
 _REDACTED_PLACEHOLDER = "<redacted>"
 
+
 def compute_diff(path: Path, target_text: str) -> str:
     """Return a unified diff of ``target_text`` against the current ``path`` content.
 

@@ -155,7 +155,6 @@ def port_open(
     return True
 
 
-
 def _gate_darwin() -> None:
     """Raise :class:`ZaiCodexHelperError` unless ``sys.platform == "darwin"`` (D-83, D-88).
 

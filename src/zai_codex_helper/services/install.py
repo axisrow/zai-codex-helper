@@ -4,21 +4,18 @@ Both the CLI handlers (``zai-codex-helper install`` / ``uninstall``) and the
 TUI menu (Install / Uninstall items) delegate here — a single source of truth
 for the full install/uninstall sequence, so the two altitudes never drift.
 
-- :func:`install_macro` = ``run_setup`` (canonical yml + binary + models_cache)
-  → strip the foreign ``codex ()`` shim from .zshrc → ``apply_zai`` (config) →
-  ``install_service`` (LaunchAgent up).
-- :func:`uninstall_macro` = ``apply_openai`` (config revert) →
+- :func:`install_macro` = ``run_setup`` (canonical yml + binary + models_cache +
+  the config.toml provider apply, in its STEP 6) → strip the foreign ``codex ()``
+  shim from .zshrc → ``install_service`` (LaunchAgent up).
+- :func:`uninstall_macro` = ``apply_provider(apply_openai)`` (config revert) →
   ``uninstall_service`` (LaunchAgent down) → remove ``moonbridge-zai.yml``.
 
-The provider write path (:func:`_apply_provider_pipeline`) is injected by the
-caller — it lives in ``cli/parser.py`` (legacy placement) and both the CLI and
-TUI already import it; passing it in keeps this service-layer module free of a
-services→cli import.
+Both delegate the config.toml write to the single services-layer primitive
+:func:`zai_codex_helper.services.provider_apply.apply_provider` (no cli import,
+no injected pipeline).
 """
 
 from __future__ import annotations
-
-from collections.abc import Callable
 
 from zai_codex_helper.services.paths import Paths
 
@@ -28,7 +25,6 @@ __all__ = ["install_macro", "uninstall_macro"]
 def install_macro(
     paths: Paths,
     *,
-    apply_pipeline: Callable,
     dry_run: bool = False,
     headless: bool = False,
 ) -> None:
@@ -36,49 +32,48 @@ def install_macro(
 
     Args:
         paths: resolved Paths bundle.
-        apply_pipeline: the D-45 provider write pipeline (caller-injected —
-            typically ``cli.parser._apply_provider_pipeline``) bound to
-            ``apply_zai``.
         dry_run: preview each step without writing.
         headless: skip interactive prompts (``--yes`` / ``--no-input``).
     """
-    import sys
-
     from zai_codex_helper.services.lifecycle import install_service
-    from zai_codex_helper.services.providers import apply_zai
     from zai_codex_helper.services.setup import run_setup
     from zai_codex_helper.services.zshrc import strip_foreign_codex_function
 
-    # 1. Canonical yml + binary + models_cache + shell helpers (idempotent).
-    run_setup(paths, yes=headless, dry_run=dry_run)
+    # 1. Canonical yml + binary + models_cache + shell helpers, AND apply the
+    #    Z.ai provider to config.toml — run_setup does the provider apply in its
+    #    STEP 6. `provider="zai"` FORCES Z.ai even when run_setup would otherwise
+    #    prompt (interactive install, headless=False): `install` must ALWAYS end
+    #    Z.ai-on. (One apply, inside setup — no double write, the #6 fix.)
+    run_setup(paths, yes=headless, provider="zai", dry_run=dry_run)
     # 2. Strip a foreign `codex () { --profile zai-glm ... }` shim if present —
     #    it shadows a bare `codex` (--profile > config default).
     if not dry_run:
         strip_foreign_codex_function(paths)
-    # 3. config.toml → Z.ai default (model_provider + features).
-    apply_pipeline(apply_zai, sys.stderr, dry_run=dry_run)
-    # 4. Moon Bridge LaunchAgent up.
+    # 3. Moon Bridge LaunchAgent up.
     install_service(paths, dry_run=dry_run)
 
 
-def uninstall_macro(
-    paths: Paths, *, apply_pipeline: Callable, dry_run: bool = False
-) -> None:
+def uninstall_macro(paths: Paths, *, dry_run: bool = False) -> None:
     """Turn Z.ai OFF — revert Codex to OpenAI, stop Moon Bridge, remove yml.
 
     Args:
         paths: resolved Paths bundle.
-        apply_pipeline: the D-45 provider write pipeline bound to
-            ``apply_openai``.
         dry_run: preview each step without writing.
     """
     import sys
 
     from zai_codex_helper.services.lifecycle import uninstall_service
+    from zai_codex_helper.services.provider_apply import (
+        apply_provider,
+        render_apply_result,
+    )
     from zai_codex_helper.services.providers import apply_openai
 
     # 1. config.toml → OpenAI default (model_provider removed; features restored).
-    apply_pipeline(apply_openai, sys.stderr, dry_run=dry_run)
+    #    Render the result once: dry-run shows the config-revert diff; a real
+    #    revert emits the restart warning (Codex Desktop won't live-reload).
+    result = apply_provider(paths, apply_openai, dry_run=dry_run)
+    render_apply_result(result, sys.stderr)
     # 2. Moon Bridge LaunchAgent down + plist removed (idempotent if absent).
     #    Forward dry_run so a preview never really boots out the agent.
     uninstall_service(paths, dry_run=dry_run)

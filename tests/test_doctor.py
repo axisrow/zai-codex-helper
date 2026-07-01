@@ -764,9 +764,7 @@ def test_doctor_fails_and_probes_unauthenticated_when_yml_has_auth_token(
         seen_auth_headers.append(req.headers.get("Authorization"))
         return Response('{"data": []}', status=200)
 
-    httpserver.expect_request("/v1/models", method="GET").respond_with_handler(
-        _capture
-    )
+    httpserver.expect_request("/v1/models", method="GET").respond_with_handler(_capture)
     httpserver.expect_request("/v1/responses", method="POST").respond_with_handler(
         _capture
     )

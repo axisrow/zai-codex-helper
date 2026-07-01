@@ -209,9 +209,7 @@ def test_pre_commit_hook_exits_1_on_staged_canary(tmp_path):
     # (a false green that only "passed" where git happened to behave). A single
     # add of a never-committed canary guarantees it shows up in --cached.
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True
-    )
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "leaked.py"], cwd=tmp_path, check=True)
 
