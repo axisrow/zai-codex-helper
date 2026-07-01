@@ -992,3 +992,42 @@ def test_install_service_converged_repairs_plist_mode_without_bounce(
     argvs = [c["argv"] for c in captured]
     assert not any("bootout" in a for a in argvs), argvs
     assert not any("bootstrap" in a for a in argvs), argvs
+
+
+@pytest.mark.unit
+def test_install_service_corrupted_plist_self_heals_via_bootstrap(
+    tmp_path, monkeypatch
+):
+    """A truncated/malformed on-disk plist is treated as drifted, not a crash.
+
+    Before the convergence gate, install unconditionally rewrote the plist, so a
+    corrupted file self-healed on the next install. _plist_drifted's read() can
+    raise plistlib.InvalidFileException on malformed bytes — that must be caught
+    and treated as drift (NOT let the exception crash install_service), so the
+    corrupted plist still gets bootout→write→bootstrap.
+    """
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)
+    paths.launchagents_dir.mkdir(parents=True, exist_ok=True)
+    (paths.launchagents_dir / "dev.zai.moonbridge.plist").write_bytes(
+        b"not a plist at all, truncated garbage"
+    )
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    argvs = [c["argv"] for c in captured]
+    assert any("bootstrap" in a for a in argvs), argvs
+    # The plist on disk is now valid canonical content (self-healed).
+    from zai_codex_helper.backends.plist import PlistBackend, canonical_plist
+
+    assert PlistBackend(paths).read() == canonical_plist(paths)

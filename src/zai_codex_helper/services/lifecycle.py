@@ -63,6 +63,7 @@ TESTABILITY (D-83):
 from __future__ import annotations
 
 import os
+import plistlib
 import socket
 import subprocess
 import sys
@@ -188,7 +189,7 @@ def _plist_path(paths: Paths):
 
 
 def _plist_drifted(paths: Paths) -> bool:
-    """True iff the on-disk plist is absent or differs from the canonical one.
+    """True iff the on-disk plist is absent, unreadable, or differs from canonical.
 
     Convergence check (Q2): a repeat ``install`` should only bounce the running
     agent when its inputs actually changed (e.g. the binary path moved). We diff
@@ -196,11 +197,22 @@ def _plist_drifted(paths: Paths) -> bool:
     to catch a moved ProgramArguments / changed KeepAlive. Missing file → drifted
     (nothing loaded to converge with). Mirrors terraform-style "diff vs actual",
     NOT an "installed" boolean.
+
+    A truncated/corrupted plist also counts as drifted (not merely "absent"):
+    ``PlistBackend.read()`` raises ``plistlib.InvalidFileException`` on malformed
+    content. Before this convergence gate existed, ``install`` unconditionally
+    rewrote the plist, so a corrupted file self-healed on the next install. The
+    gate must preserve that self-heal — treat a read failure as drift so install
+    falls through to bootout→write→bootstrap instead of crashing.
     """
     backend = PlistBackend(paths)
     if not backend.exists():
         return True
-    return backend.read() != canonical_plist(paths)
+    try:
+        on_disk = backend.read()
+    except (plistlib.InvalidFileException, OSError):
+        return True
+    return on_disk != canonical_plist(paths)
 
 
 def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
