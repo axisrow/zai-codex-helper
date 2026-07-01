@@ -82,6 +82,7 @@ from zai_codex_helper.backends.json_backend import JsonBackend
 from zai_codex_helper.backends.toml import TomlBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.services.deps import detect_moonbridge_binary
+from zai_codex_helper.services.env import child_env
 from zai_codex_helper.services.lifecycle import port_open, verify_service_loaded
 from zai_codex_helper.services.moonbridge_yml import yml_has_auth_token
 from zai_codex_helper.services.paths import Paths
@@ -568,6 +569,7 @@ def _check_codex_desktop(runner: Runner, *, platform_: str) -> CheckResult | Non
             check=False,
             capture_output=True,
             text=True,
+            env=child_env(),  # #16: pgrep must not inherit ZAI_API_KEY
         )
     except Exception as e:  # noqa: BLE001 — doctor reports, never raises.
         return CheckResult(

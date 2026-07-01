@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from zai_codex_helper.errors import ZaiCodexHelperError
+from zai_codex_helper.services.env import child_env
 from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.paths import Paths
 
@@ -129,6 +130,7 @@ def _capture_go_version(go_path: str) -> str | None:
             text=True,
             timeout=_GO_VERSION_TIMEOUT,
             check=False,
+            env=child_env(),  # #16: go must not inherit ZAI_API_KEY
         )
     except (OSError, subprocess.SubprocessError):
         return None

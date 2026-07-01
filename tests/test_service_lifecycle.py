@@ -934,6 +934,38 @@ def test_install_service_drift_bounces(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_install_service_launchctl_env_excludes_zai_api_key(tmp_path, monkeypatch):
+    """#16: launchctl child processes never inherit ZAI_API_KEY.
+
+    With the key set in the parent env, every launchctl call install_service
+    makes (bootout/bootstrap/print) must pass an explicit env omitting it.
+    """
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+    _darwin(monkeypatch)
+    _uid(monkeypatch, 501)
+    paths = Paths.from_home(tmp_path)  # no plist → drift → full bootout→write→bootstrap
+    _patch_port(monkeypatch, connects=True)
+    runner, captured = _recording_runner(
+        responses=[
+            _ok(["launchctl", "bootout"]),
+            _ok(["launchctl", "bootstrap"]),
+            _ok(["launchctl", "print"], "state = running"),
+        ]
+    )
+
+    rc = lifecycle.install_service(paths, runner=runner)
+
+    assert rc == 0
+    assert captured, "no launchctl calls recorded"
+    for call in captured:
+        env = call["kwargs"].get("env")
+        assert env is not None, f"no env passed to {call['argv'][:2]}"
+        assert "ZAI_API_KEY" not in env, f"key leaked to {call['argv'][:2]}"
+
+
+@pytest.mark.unit
 def test_install_service_fresh_not_loaded_bootstraps(tmp_path, monkeypatch):
     """Not loaded (fresh) → bootstrap runs (convergence gate falls through)."""
     _darwin(monkeypatch)

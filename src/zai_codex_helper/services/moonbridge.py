@@ -56,6 +56,7 @@ from pathlib import Path
 
 from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.deps import _is_executable_file, detect_go
+from zai_codex_helper.services.env import child_env
 from zai_codex_helper.services.paths import Paths
 
 __all__ = [
@@ -231,6 +232,8 @@ def _run_clone_checkout_build(runner, clone_dir: str, binary: Path) -> None:
             step resolve against this via ``cwd=clone_dir``).
         binary: the output binary path (``paths.codex_dir / "moon-bridge"``).
     """
+    # #16: git/go must not inherit ZAI_API_KEY — none of them need it.
+    env = child_env()
     # D-69 step 3 / D-70 — clone, then checkout the PINNED CONSTANT (never a
     # branch name). capture_output keeps toolchain stderr out of the terminal
     # and available for the error message on failure (T-11-03).
@@ -240,6 +243,7 @@ def _run_clone_checkout_build(runner, clone_dir: str, binary: Path) -> None:
             check=True,
             capture_output=True,
             text=True,
+            env=env,
         )
     except subprocess.CalledProcessError as exc:
         raise ZaiCodexHelperError(
@@ -252,6 +256,7 @@ def _run_clone_checkout_build(runner, clone_dir: str, binary: Path) -> None:
             check=True,
             capture_output=True,
             text=True,
+            env=env,
         )
     except subprocess.CalledProcessError as exc:
         raise ZaiCodexHelperError(
@@ -267,6 +272,7 @@ def _run_clone_checkout_build(runner, clone_dir: str, binary: Path) -> None:
             check=True,
             capture_output=True,
             text=True,
+            env=env,
         )
     except subprocess.CalledProcessError as exc:
         raise ZaiCodexHelperError(
