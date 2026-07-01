@@ -296,9 +296,18 @@ def run_setup(
     # gets 401 (it sends ZAI_API_KEY, Moon Bridge expects the auth_token). Ask
     # ONCE whether to switch to localhost-only (drop the token). No/declined →
     # leave the yml untouched + warn; Yes → backup once, then write canonical.
+    # D-79 (#18): under headless `yes`, auto-consent to dropping the token — the
+    # same auto-consent shell helpers (STEP 5) and the LaunchAgent (STEP 7) get,
+    # and the beneficial default (an un-dropped token 401s the whole chain). So
+    # `yes` short-circuits the prompt; without it we ask via confirm_fn.
     yml_backend = YamlBackend(paths)
     existing = yml_backend.read() if yml_backend.exists() else None
-    if yml_has_auth_token(existing) and not confirm_fn(AUTH_TOKEN_PROMPT):
+    # Keep confirm_fn gated BEHIND yml_has_auth_token — `and` short-circuits, so
+    # a fresh/canonical yml (no token) never prompts. The inner `yes or …` adds
+    # the headless auto-consent WITHOUT hoisting confirm_fn out of that gate (a
+    # separate `drop_token = yes or confirm_fn(...)` line would fire the prompt
+    # on every interactive run, even with no token — a spurious false prompt).
+    if yml_has_auth_token(existing) and not (yes or confirm_fn(AUTH_TOKEN_PROMPT)):
         print_fn(AUTH_TOKEN_LEFT_WARNING)
     elif dry_run:
         # D-95: preview the would-be moonbridge-zai.yml as a REDACTED diff (the

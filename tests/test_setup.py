@@ -591,6 +591,68 @@ def test_setup_drops_auth_token_on_yes(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_setup_drops_auth_token_headless_without_prompting(tmp_path, monkeypatch):
+    """#18: headless `yes=True` auto-drops server.auth_token, never calling confirm_fn.
+
+    Before the fix, run_setup called confirm_fn unconditionally even under `yes`,
+    so a headless install with a foreign auth_token yml either blocked on stdin
+    (TTY) or silently left the token (closed stdin → confirm returns False). Now
+    `yes` short-circuits: the token is dropped and confirm_fn is never invoked.
+    """
+    _precreate_binary(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+    yml = tmp_path / ".codex" / "moonbridge-zai.yml"
+    yml.write_text(
+        "ZAI_API_KEY: old\n"
+        "server:\n"
+        "  addr: 127.0.0.1:38440\n"
+        "  auth_token: sk-moonbridge-zai-local\n"
+    )
+
+    def _must_not_prompt(*_a, **_k):
+        raise AssertionError("confirm_fn must not be called under headless yes=True")
+
+    rc = run_setup(paths, yes=True, confirm_fn=_must_not_prompt)
+
+    assert rc == 0
+    data = yaml.safe_load(yml.read_text())
+    assert "auth_token" not in data.get("server", {})  # token dropped headlessly
+
+
+@pytest.mark.unit
+def test_setup_interactive_no_token_does_not_prompt_for_auth_token(
+    tmp_path, monkeypatch
+):
+    """Regression: interactive setup with NO auth_token must NOT ask the auth_token prompt.
+
+    The `yml_has_auth_token(...) and not (yes or confirm_fn(...))` gate keeps
+    confirm_fn short-circuited behind the has-token check. A naive refactor to a
+    separate `drop_token = yes or confirm_fn(...)` line evaluates confirm_fn
+    unconditionally, firing a spurious "remove the auth_token?" prompt (about a
+    token that doesn't exist) on every interactive run. This pins that it doesn't.
+    """
+    from zai_codex_helper.services.moonbridge_yml import AUTH_TOKEN_PROMPT
+
+    _precreate_binary(tmp_path)
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setenv(
+        "ZAI_API_KEY", "11111111111111111111111111111111.aaaaaaaaaaaaaaaa"
+    )
+    # No moonbridge-zai.yml on disk → no auth_token → the prompt must never fire.
+
+    def _confirm(prompt, *_a, **_k):
+        assert prompt != AUTH_TOKEN_PROMPT, "must not prompt about a non-existent token"
+        return True  # consent to shell helpers / LaunchAgent (the real prompts)
+
+    rc = run_setup(paths, yes=False, input_fn=lambda _p: "zai", confirm_fn=_confirm)
+
+    assert rc == 0
+
+
+@pytest.mark.unit
 def test_setup_skips_auth_token_removal_on_no(tmp_path, monkeypatch, capsys):
     """Foreign yml + No → yml left untouched, warning printed."""
     _precreate_binary(tmp_path)
