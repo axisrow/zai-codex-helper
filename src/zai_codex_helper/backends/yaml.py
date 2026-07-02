@@ -151,10 +151,11 @@ class YamlBackend(ConfigBackend):
         the API key (D-56 LOAD-BEARING, SECR-02, CLAUDE.md §"File Permissions").
         The default enforces the secret posture without relying on the caller
         to remember. A caller MAY pass an explicit mode to override, but the
-        default is already the restricted mode. NOTE on D-DEFERRED-01:
-        ``atomic_write(mode=None)`` does NOT preserve an existing destination
-        mode (it inherits the temp's ``0o600``); the secrets path sidesteps
-        that fragility by passing the explicit ``0o600``.
+        default is already the restricted mode. NOTE: ``atomic_write(mode=None)``
+        preserves an EXISTING file's mode (and uses the temp's ``0o600`` only on
+        a fresh write) — but a pre-existing yml could already have a wider mode
+        that ``None`` would faithfully keep, so the secrets path does NOT rely on
+        ``None`` and always passes the explicit ``0o600``.
 
         ``yaml.safe_dump`` returns a ``str`` (UTF-8 when ``allow_unicode=True``);
         ``_write_via_atomic`` encodes ``str`` to UTF-8 bytes (see
