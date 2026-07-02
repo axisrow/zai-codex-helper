@@ -7,10 +7,10 @@ client**, and a monkeypatched ``socket.create_connection`` so NO real
 mock-testable; the real live-service doctor is an e2e-smoke concern (run on a
 real macOS box with a live Moon Bridge).
 
-- **SC-1 / DIAG-01** ordered 9-check chain (D-89): binary → yml → port →
-  GET /v1/models → POST /v1/responses glm-5.2 → models_cache → current default
-  → LaunchAgent loaded → key 0600 — asserted via the sequence of CheckResult
-  names returned/printed.
+- **SC-1 / DIAG-01** ordered diagnostic chain (D-89): binary → yml → port →
+  GET /v1/models → current default → LaunchAgent loaded → key 0600 →
+  models_cache → POST /v1/responses glm-5.2 (LAST, slow) — asserted via the
+  sequence of CheckResult names returned/printed.
 - **SC-2 / DIAG-02** HTTP probes (D-90): both probes go through a SINGLE
   hard-timeout httpx.Client; port-open-but-/v1/models-401 yields DISTINCT
   verdicts port=pass + /v1/models=fail; a slow endpoint fails fast (hard
@@ -149,7 +149,10 @@ def _seed_full_pass_state(tmp_path):
     yml.write_text("api_key: secret\nbase_url: http://127.0.0.1:38440/v1\n")
     os.chmod(yml, 0o600)
     cache = codex / "models_cache.json"
-    cache.write_text('{"glm-5.2": {"name": "GLM-5.2"}}')
+    # Real schema: {"models": [{"slug": <name>, ...}]} — a LIST keyed by slug
+    # (NOT a top-level dict keyed by model name). _check_models_cache searches
+    # cache["models"] by slug, so the entry must be list-form to PASS.
+    cache.write_text('{"models": [{"slug": "glm-5.2", "name": "GLM-5.2"}]}')
     config = codex / "config.toml"
     config.write_text(
         'model = "glm-5.2"\n'
@@ -198,10 +201,9 @@ def test_full_chain_all_pass_returns_zero(tmp_path, monkeypatch, httpserver, cap
 
     out = capsys.readouterr().out
     assert rc == 0
-    # The 7-check names appear in order; POST is LAST (slow probe); Codex
-    # Desktop (darwin only) may follow. Match the documented chain.
-    # (models_cache is NOT checked — it's Codex's OpenAI catalog, glm-5.2 never
-    # lands there; GET /v1/models is the real availability proof.)
+    # The check names appear in order; POST is LAST (slow probe); Codex Desktop
+    # (darwin only) may follow. Match the documented chain. models_cache IS
+    # checked (READ-ONLY): setup writes the glm-5.2 entry, doctor WARNs if absent.
     expected_chain = [
         "Moon Bridge binary",
         "moonbridge-zai.yml",
@@ -210,6 +212,7 @@ def test_full_chain_all_pass_returns_zero(tmp_path, monkeypatch, httpserver, cap
         "current default",
         "LaunchAgent loaded",
         "key file mode",
+        "models_cache.json",
         "POST /v1/responses",
     ]
     offsets = [out.find(name) for name in expected_chain]
@@ -858,3 +861,77 @@ def test_run_with_spinner_abort_returns_none():
     )
     done.set()  # release the worker so the test process can exit cleanly
     assert result is None
+
+
+# =========================================================================== #
+# #23 — models_cache check is wired into run_doctor (WARN-only, never crashes)
+# =========================================================================== #
+
+
+@pytest.mark.unit
+def test_check_models_cache_present_passes(tmp_path):
+    """glm-5.2 in the list-form models cache → PASS."""
+    codex = tmp_path / ".codex"
+    codex.mkdir(parents=True, exist_ok=True)
+    (codex / "models_cache.json").write_text(
+        '{"models": [{"slug": "glm-5.2", "name": "GLM-5.2"}]}'
+    )
+    result = doctor._check_models_cache(Paths.from_home(tmp_path))
+    assert result.verdict == "pass"
+
+
+@pytest.mark.unit
+def test_check_models_cache_absent_warns_never_fails(tmp_path):
+    """No models_cache.json (glm-5.2 not installed) → WARN, never FAIL/crash.
+
+    The user's hard requirement: doctor must not crash or fail when the model
+    isn't in the cache. JsonBackend.read() returns {} for a missing file, so the
+    slug lookup misses → WARN. This is the load-bearing no-crash guarantee.
+    """
+    result = doctor._check_models_cache(Paths.from_home(tmp_path))
+    assert result.verdict == "warn"  # NOT "fail", NOT an exception
+
+
+@pytest.mark.unit
+def test_check_models_cache_malformed_warns(tmp_path):
+    """Malformed/non-dict models_cache.json → WARN (caught), never crash."""
+    codex = tmp_path / ".codex"
+    codex.mkdir(parents=True, exist_ok=True)
+    (codex / "models_cache.json").write_text("]not json[")
+    result = doctor._check_models_cache(Paths.from_home(tmp_path))
+    assert result.verdict == "warn"
+
+
+@pytest.mark.unit
+def test_run_doctor_absent_models_cache_still_exits_zero(
+    tmp_path, monkeypatch, httpserver
+):
+    """End-to-end: a full-pass state minus the models_cache entry → doctor exit 0.
+
+    Removing only the models_cache entry turns that one check to WARN; because
+    WARNs never fail doctor, the run still returns 0 — an un-installed glm-5.2
+    never crashes or fails the diagnostic.
+    """
+    _seed_full_pass_state(tmp_path)
+    # Drop the cache entry → the models_cache check becomes WARN.
+    (tmp_path / ".codex" / "models_cache.json").unlink()
+    paths = Paths.from_home(tmp_path)
+    _patch_port(monkeypatch, connects=True)
+    _redirect_to_httpserver(monkeypatch, httpserver)
+    httpserver.expect_request("/v1/models", method="GET").respond_with_data(
+        '{"data": []}', status=200, content_type="application/json"
+    )
+    httpserver.expect_request("/v1/responses", method="POST").respond_with_data(
+        '{"id": "ok"}', status=200, content_type="application/json"
+    )
+    runner, _ = _recording_runner(
+        responses=[
+            ("launchctl", _ok(["launchctl"], stdout="pid = 12345\n")),
+            ("pgrep", _ok(["pgrep"], stdout="")),
+        ]
+    )
+
+    with _client_for(httpserver) as client:
+        rc = run_doctor(paths, http_client=client, runner=runner)
+
+    assert rc == 0  # WARN on models_cache does NOT fail doctor
