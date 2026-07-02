@@ -8,6 +8,8 @@ The ordered check chain (DIAG-01, D-89), in emit order:
   1. Moon Bridge binary — :func:`detect_moonbridge_binary`.
   2. ``moonbridge-zai.yml`` parseable — :class:`YamlBackend.read`.
   3. Port ``127.0.0.1:38440`` open — socket probe.
+  3b. (conditional) ``server.auth_token`` present — :func:`_check_auth_token`,
+     emitted after the port check only when the yml carries a foreign token.
   4. ``GET /v1/models`` — httpx GET (hard timeout D-90, DIAG-02).
   5. Current default provider — :func:`detect_provider`.
   6. LaunchAgent loaded — :func:`verify_service_loaded`.

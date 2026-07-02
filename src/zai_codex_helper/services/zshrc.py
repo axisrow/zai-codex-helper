@@ -51,7 +51,8 @@ _MOONBRIDGE_EXPORT_RE = re.compile(
 
 
 def has_foreign_codex_function(paths: Paths) -> bool:
-    """True iff ``.zshrc`` contains the foreign ``codex`` shim + env export.
+    """True iff ``.zshrc`` contains the foreign ``codex`` shim OR the
+    ``MOONBRIDGE_API_KEY`` export (either match is enough).
 
     Read-only. Used by setup/doctor to surface the finding.
     """
