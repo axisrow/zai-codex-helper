@@ -1,55 +1,22 @@
-"""``JsonBackend`` — the concrete :class:`ConfigBackend` for ``models_cache.json``
-(Phase 9; decisions D-58, D-60, D-61, D-62, D-DEFERRED-01).
+"""``JsonBackend`` — concrete :class:`ConfigBackend` for ``models_cache.json`` (D-58, D-60, D-61, D-62, D-DEFERRED-01).
 
-``~/.codex/models_cache.json`` is a cache of model metadata that the user may
-have already populated with entries for OTHER models. The tool's job (in a later
-phase) is to merge a single new entry (``glm-5.2``) into that cache WITHOUT
-clobbering the user's existing entries and WITHOUT appending a duplicate key on
-re-run. This backend is the generic primitive that makes that safe: it
-deep-merges the caller-supplied override dict into the file's existing JSON
-object, preserving keys the override does not touch and overwriting only the
-conflicting leaves.
+Deep-merges a caller-supplied override dict into ``~/.codex/models_cache.json``,
+preserving existing model entries and never clobbering on re-run.
 
 Contract (D-58, D-60):
+- **Merge, not append.** :meth:`write_canonical` deep-merges via :func:`deep_merge`
+  (existing keys preserved, new keys added, conflicting leaves overwritten).
+- **Idempotent (SC-3).** Repeated writes converge to stable on-disk state (no duplicate keys).
+- **Deep-merge semantics (D-60).** Recurses only when both sides are dicts; at leaves,
+  override wins wholesale (lists replaced, not element-merged).
 
-- **Merge, not append / not overwrite-whole.** ``write_canonical(content)`` reads
-  the current cache via :meth:`JsonBackend.read`, computes ``deep_merge(current,
-  content)``, and writes the merged object back. Existing entries survive; new
-  entries are added; conflicting leaf keys are overwritten by the override value.
-  A whole-file overwrite would silently delete the user's other model entries;
-  the deep-merge path makes that impossible.
-- **Idempotent (SC-3).** Writing the same key twice yields the SAME file.
-  ``deep_merge`` into a JSON object cannot duplicate a key — JSON objects carry
-  unique keys by definition — so repeated merges converge to a stable on-disk
-  shape (proven byte-identical by the SC-3 test).
-- **Deep-merge semantics (D-60).** :func:`deep_merge` recurses only when BOTH
-  the base value and the override value are dicts; at every other leaf the
-  override wins (wholesale replace — lists are NOT element-merged, they are
-  overwritten; ``models_cache.json`` entries are dict-shaped, so this is the
-  correct shape for the contract).
+Module name is load-bearing (D-62): ``json_backend.py`` (not ``json.py``) avoids
+shadowing stdlib ``json``. Library discipline (D-61): stdlib ``json`` only.
 
-Module name is load-bearing (D-62): this file is ``json_backend.py``, NOT
-``json.py``. A module named ``json.py`` inside the package would shadow the
-stdlib ``json`` and break ``import json`` for every sibling import (including
-this module's own ``import json`` at the top). The ``json_backend.py`` filename
-keeps that import resolving to the stdlib, not to this file.
-
-Library discipline (D-61, CLAUDE.md "What NOT to Use"): stdlib ``json`` only —
-``json.loads`` for read, ``json.dumps`` for write. No new runtime dependency.
-
-Mode handling (D-DEFERRED-01): ``write_canonical`` defaults to ``mode=None``,
-which :func:`atomic_write` leaves at the tempfile's mode — ``0o600``,
-umask-INDEPENDENT (``mkstemp``). ``models_cache.json`` holds NO secret (the API key
-lives in ``moonbridge-zai.yml``, never here), so ``0o600`` is MORE restrictive
-than the conventional ``0o644`` cache-file mode but harmless (a more
-restrictive mode is never a security regression). A caller MAY pass an explicit
-``mode`` (e.g. ``0o644``) if matching the conventional cache-file mode matters;
-the default ``None`` is safe.
-
-Scope discipline (D-38 analog): this module delivers the merge PRIMITIVE only.
-It does NOT know what a "glm-5.2" entry looks like — no schema, no
-model-metadata logic. Phase 15 supplies the entry dict and calls
-:meth:`JsonBackend.write_canonical`.
+Mode handling (D-DEFERRED-01): ``mode=None`` defaults to tempfile's ``0o600`` (safe;
+API key lives in ``moonbridge-zai.yml``, not here). Beyond the generic
+deep-merge, :func:`merge_model_list` special-cases the ``models`` list
+(replace-by-slug) so the Phase 15 fix preserves the user's other model entries.
 """
 
 from __future__ import annotations
@@ -61,42 +28,22 @@ from zai_codex_helper.services.paths import Paths
 
 __all__ = ["JsonBackend", "deep_merge", "merge_model_list", "merged_cache_text"]
 
-#: The object key in ``models_cache.json`` whose value is a LIST of model entries
-#: (the SPIKE deliverable, D-98 / SC-4). The real ``~/.codex/models_cache.json``
-#: top level is ``{"fetched_at", "etag", "client_version", "models"}``; only the
-#: ``models`` key is list-shaped. ``write_canonical`` routes this key through
-#: :func:`merge_model_list` (list-aware, replace-by-slug) instead of
-#: :func:`deep_merge`'s list-overwrite, so the user's existing entries survive.
-#:
-#: Kept as a module constant (not a magic literal at the call site) so the surgical
-#: override in :meth:`JsonBackend.write_canonical` names exactly one key.
+#: The ``models`` key in ``models_cache.json`` (D-98 / SC-4). Routed through
+#: :func:`merge_model_list` (replace-by-slug) instead of :func:`deep_merge`'s
+#: list-overwrite, preserving user's existing entries.
 _MODELS_KEY = "models"
 
 
 def merge_model_list(existing: list, override_entries: list, key: str = "slug") -> list:
     """List-aware merge for ``models_cache.json``'s ``models`` field (D-98, SC-4).
 
-    The real ``~/.codex/models_cache.json`` ``models`` value is a LIST of dicts,
-    each keyed by its ``slug`` field (e.g. ``{"slug": "gpt-5.5", ...}``). The
-    existing :func:`deep_merge` OVERWRITES lists wholesale (its documented
-    contract: "lists are NOT element-merged, they are overwritten"), so a
-    ``write_canonical({"models": [glm_entry]})`` call would CLOBBER the user's
-    existing 5 models — a data-loss bug (T-15-06). This helper is the
-    list-aware path that fixes it.
+    Replace-by-slug merge: preserve existing entries not overridden, replace matching
+    entries, append new slugs. Prevents the data-loss bug (T-15-06) where wholesale
+    list-overwrite would clobber the user's existing models.
 
-    Semantics (the D-98 / SC-4 non-clobbering mandate):
-
-    - For each entry in ``existing``: if NO override entry has the same ``key``
-      value, KEEP it as-is; if an override entry matches, REPLACE it with the
-      override entry WHOLESALE (the override wins at the entry level, mirroring
-      deep_merge's leaf semantics — the override is authoritative for that slug).
-    - After iterating ``existing``, APPEND any override entries whose ``key``
-      value was NOT in ``existing`` (the new slugs, e.g. glm-5.2), in their
-      original order.
-    - The returned list is deterministic: existing order preserved, new entries
-      appended last (which makes the byte-snapshot idempotence test stable).
-    - Purity: returns a NEW list; does NOT mutate ``existing`` or
-      ``override_entries``.
+    Semantics: for each entry, replace if slug matches override, else keep; after,
+    append new override slugs. Deterministic order (existing → new appended last).
+    Purity: returns NEW list, does not mutate inputs.
 
     Args:
         existing: The current ``models`` list (e.g. the user's 5 models). Must be
@@ -172,25 +119,10 @@ def merge_model_list(existing: list, override_entries: list, key: str = "slug") 
 def deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge ``override`` over ``base`` and return a NEW dict (D-60).
 
-    Semantics:
-
-    - For each key in ``override``:
-      * if the key is NOT in ``base`` → take the override value as-is;
-      * if BOTH ``base[key]`` and ``override[key]`` are dicts → recurse (merge
-        key-by-key down to the leaves);
-      * otherwise (leaf conflict — either side is not a dict) → the override
-        wins, wholesale (lists, strings, numbers, bools, ``None`` are replaced
-        in full; lists are NOT element-merged).
-
-    This is a recursive deep-merge: nested dicts are merged key-by-key to the
-    leaves; non-dict values are replaced wholesale by the override. ``base`` is
-    iterated first to preserve its insertion order, then new keys from
-    ``override`` are appended in their original order — the returned dict's key
-    order is deterministic and stable across runs (which is what makes the
-    idempotent SC-3 byte-snapshot test pass).
-
-    Purity: this function returns a NEW dict and does NOT mutate ``base`` or
-    ``override`` (proven by ``test_json_deep_merge_does_not_mutate_inputs``).
+    For each key: if NOT in base, take override; if both are dicts, recurse;
+    otherwise override wins wholesale (lists, strings, etc. replaced in full).
+    Key order deterministic (base first, then new override keys appended).
+    Purity: returns NEW dict, does not mutate inputs.
 
     Args:
         base: The existing state (e.g. the parsed ``models_cache.json``). Must
@@ -236,14 +168,10 @@ def deep_merge(base: dict, override: dict) -> dict:
 
 
 def merged_cache_text(current: dict, content: dict) -> str:
-    """The canonical models_cache JSON text after merging ``content`` over ``current``.
+    """Canonical JSON text after merging ``content`` over ``current`` (SC-4 / D-98).
 
-    The SINGLE merge recipe shared by :meth:`JsonBackend.write_canonical` (which
-    writes the result) and the ``setup --dry-run`` preview (which only renders
-    it) — so the preview can never diverge from the real write. Deep-merges,
-    then applies the surgical ``models`` list-aware override (replace-by-slug,
-    never clobber the user's entries), then serializes with the canonical
-    ``json.dumps(indent=2)``.
+    Shared recipe for :meth:`JsonBackend.write_canonical` and ``setup --dry-run``
+    preview. Deep-merges, applies surgical ``models`` list-aware override, serializes.
     """
     merged = deep_merge(current, content)
     # SC-4 / D-98: the `models` key is a LIST keyed by `slug`. deep_merge would
@@ -262,22 +190,13 @@ def merged_cache_text(current: dict, content: dict) -> str:
 
 
 class JsonBackend(ConfigBackend):
-    """Concrete :class:`ConfigBackend` for ``~/.codex/models_cache.json`` (D-58).
+    """Concrete :class:`ConfigBackend` for ``~/.codex/models_cache.json`` (D-58, D-29, D-30).
 
-    A purpose-built JSON backend: the subclass hard-codes the ``Paths`` field
-    name (``"models_cache"``) so callers only pass the :class:`Paths` instance.
-    The path is resolved by the ABC constructor — this class NEVER hard-codes a
-    ``~/.codex/models_cache.json`` literal. :meth:`read` returns the parsed
-    ``dict``; :meth:`write_canonical` deep-merges the supplied override into the
-    existing file's JSON object (merge, not append / not overwrite-whole),
-    serializes via ``json.dumps(..., indent=2)``, and routes the payload through
-    ``self._write_via_atomic`` (D-29 structural — no backend bypasses
-    ``atomic_write``); :meth:`backup_once` is inherited verbatim from the ABC
-    (D-30 — no override).
-
-    The backend is GENERIC: it merges arbitrary JSON objects. Semantic
-    correctness ("is this a valid Codex models_cache?", "what keys make a
-    glm-5.2 entry?") is Phase 15's job, not the backend's.
+    Hard-codes ``Paths`` field ``"models_cache"`` so callers pass only :class:`Paths`.
+    :meth:`read` returns parsed ``dict``; :meth:`write_canonical` deep-merges override
+    into existing JSON (via :func:`merged_cache_text`), routes through ``_write_via_atomic``
+    (D-29 structural). :meth:`backup_once` inherited from ABC (D-30, no override).
+    Generic: merges arbitrary JSON. Semantic correctness is upstream job.
     """
 
     def __init__(self, paths: Paths) -> None:
@@ -293,21 +212,8 @@ class JsonBackend(ConfigBackend):
     def read(self) -> dict:
         """Return the parsed ``models_cache.json`` as a ``dict`` (D-58).
 
-        Behavior:
-
-        - If the file EXISTS, parse it via ``json.loads`` and return the result.
-          The caller expects a ``dict`` (the file's top level is a JSON object).
-        - If the file does NOT exist, return ``{}`` (an empty cache is the
-          no-entry baseline for a fresh user who has never populated
-          ``models_cache.json``; the merge path handles empty-as-empty
-          cleanly — merging the override into ``{}`` yields the override alone).
-        - If the file exists but parses to something that is NOT a ``dict``
-          (e.g. a top-level JSON array ``[1, 2, 3]``), raise ``ValueError``. The
-          merge contract is object-level; a non-object top level is a corrupted
-          or unexpected file — fail loudly, do NOT silently coerce.
-
-        Returns:
-            The parsed JSON object as a ``dict`` (``{}`` if the file is absent).
+        If file exists, parse via ``json.loads``; if absent, return ``{}``;
+        if not a dict at top level, raise ``ValueError``. Merge contract is object-level.
         """
         if not self._path.exists():
             return {}
@@ -324,53 +230,16 @@ class JsonBackend(ConfigBackend):
         return self._path.exists()
 
     def write_canonical(self, content: dict, mode: int | None = None) -> None:
-        """Deep-merge ``content`` into ``models_cache.json`` crash-safely (D-58, D-29).
+        """Deep-merge ``content`` into ``models_cache.json`` crash-safely (D-58, D-29, SC-3, SC-4, D-98).
 
-        This is the SC-3 (ROADMAP Phase 9) primitive: an idempotent
-        object-level merge that NEVER clobbers the user's existing cache entries
-        and NEVER appends a duplicate key on re-run.
-
-        Sequence (order is load-bearing):
-
-        1. Validate ``content`` is a ``dict`` (``TypeError`` otherwise — the
-           contract is object-level merge; a list is not a valid override).
-        2. Read the current state via :meth:`read` (handles file-absent as
-           ``{}``).
-        3. Compute ``merged = deep_merge(current, content)`` — existing keys
-           preserved, new keys added, conflicting leaves overwritten.
-        4. **List-aware override for the ``models`` key (SC-4 / D-98, Phase 15):**
-           if BOTH ``current`` and ``content`` have a ``models`` key and BOTH
-           values are lists, OVERRULE the deep_merge result for that single key
-           with ``merge_model_list(current['models'], content['models'])``.
-           ``models_cache.json``'s ``models`` field is a LIST of dicts keyed by
-           ``slug``; a wholesale list-overwrite (deep_merge's default — "lists
-           are NOT element-merged, they are overwritten") would CLOBBER the
-           user's existing model entries. ``merge_model_list`` replaces-by-slug
-           and appends new slugs, preserving every existing entry (the D-98
-           non-clobbering mandate). This is SURGICAL: every other key
-           (``fetched_at`` / ``etag`` / ``client_version`` / any future
-           dict-shaped key) still uses deep_merge, so provenance metadata and
-           unrelated fields are untouched.
-        5. Serialize via ``json.dumps(merged, indent=2)`` — 2-space pretty-print;
-           key order is preserved (``sort_keys`` left False so the user's
-           existing key order survives — the lossless-friendly choice, and what
-           makes the byte-snapshot idempotence test stable across runs).
-        6. Route the payload through ``self._write_via_atomic(serialized, mode)``
-           (D-29 structural — never call ``atomic_write`` directly; never call
-           ``backup_once`` here, the higher layer gates it).
+        Idempotent object-level merge: never clobbers user entries, never duplicates keys.
+        Uses :func:`merged_cache_text` (which applies surgical list-aware override for
+        ``models`` key to preserve existing entries), routes through ``_write_via_atomic``.
 
         Args:
-            content: The dict to merge IN (the override — e.g. Phase 15's
-                ``glm-5.2`` entry wrapped as ``{"models": [GLM_52_ENTRY]}``).
+            content: The dict to merge (override, e.g. ``{"models": [GLM_52_ENTRY]}``).
                 Must be a ``dict``.
-            mode: ``None`` (default) or an explicit integer mode. ``mode=None``
-                passes through to ``atomic_write``, which yields ``0o600`` from
-                the tempfile (D-DEFERRED-01). ``models_cache.json`` holds no
-                secret, so ``0o600`` is more restrictive than the conventional
-                ``0o644`` cache-file mode but harmless (a more restrictive mode
-                is never a security regression). A caller MAY pass an explicit
-                ``mode`` (e.g. ``0o644``) to match the conventional cache-file
-                mode; the default ``None`` is safe.
+            mode: ``None`` (default, tempfile's ``0o600``, D-DEFERRED-01) or explicit mode.
 
         Raises:
             TypeError: if ``content`` is not a ``dict``.
