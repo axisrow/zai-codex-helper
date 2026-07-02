@@ -4,7 +4,7 @@ Walks the Codex ⇄ Moon Bridge ⇄ Z.ai chain link-by-link, printing colored
 verdicts (``[OK]`` / ``[!]`` / ``[X]``) + ``To fix:`` hints. Exits ``0`` unless
 a check FAILS; WARNs alone → exit ``0`` (D-89).
 
-The ordered check chain (DIAG-01, D-89):
+The ordered check chain (DIAG-01, D-89), in emit order:
   1. Moon Bridge binary — :func:`detect_moonbridge_binary`.
   2. ``moonbridge-zai.yml`` parseable — :class:`YamlBackend.read`.
   3. Port ``127.0.0.1:38440`` open — socket probe.
@@ -12,16 +12,14 @@ The ordered check chain (DIAG-01, D-89):
   5. Current default provider — :func:`detect_provider`.
   6. LaunchAgent loaded — :func:`verify_service_loaded`.
   7. Key mode ``0600`` — file permission check.
-  8. ``POST /v1/responses`` (``glm-5.2``) — slow upstream probe LAST (spinner,
+  8. ``models_cache.json`` glm-5.2 entry — READ-ONLY (doctor reads, never writes;
+     setup STEP 6.5 writes it). Absent/missing/malformed → WARN, never FAIL — an
+     un-installed model never fails or crashes doctor.
+  9. ``POST /v1/responses`` (``glm-5.2``) — slow upstream probe LAST (spinner,
      interruptible → WARN not FAIL).
 
-``models_cache.json`` glm-5.2 entry — READ-ONLY: doctor reads the cache and
-WARNs if the entry is absent (setup STEP 6.5 writes it; the missing entry makes
-Codex flag unknown-model metadata). An absent/missing/malformed cache is always a
-WARN, never a FAIL — an un-installed model never fails or crashes doctor.
-
 Codex Desktop detection (D-91, DIAG-03): ``pgrep`` check on darwin only → WARN
-if running (staleness hint).
+if running (staleness hint), appended after the chain.
 
 HTTP hard timeout (D-90, DIAG-02): both probes share one :class:`httpx.Client`
 with split timeouts (short connect, longer read) — bounds T-14-01/T-14-02.
@@ -199,7 +197,7 @@ class CheckResult:
 
 
 def _check_binary(paths: Paths) -> CheckResult:
-    """Check 1: Moon Bridge binary exists + is executable (reuse Phase 10)."""
+    """Moon Bridge binary exists + is executable (reuse Phase 10)."""
     name = "Moon Bridge binary"
     dep = detect_moonbridge_binary(paths)
     if dep.present:
@@ -218,7 +216,7 @@ def _check_binary(paths: Paths) -> CheckResult:
 
 
 def _check_yml(paths: Paths) -> CheckResult:
-    """Check 2: ``moonbridge-zai.yml`` is parseable (reuse Phase 9 YamlBackend)."""
+    """``moonbridge-zai.yml`` is parseable (reuse Phase 9 YamlBackend)."""
     name = "moonbridge-zai.yml"
     backend = YamlBackend(paths)
     if not backend.exists():
@@ -246,7 +244,7 @@ def _check_yml(paths: Paths) -> CheckResult:
 
 
 def _check_port_open() -> CheckResult:
-    """Check 3: TCP port ``127.0.0.1:38440`` is open (stdlib socket probe).
+    """TCP port ``127.0.0.1:38440`` is open (stdlib socket probe).
 
     DISTINCT from checks 4/5 (D-90): the port being open only means a process
     is listening; it says nothing about auth/upstream. A later probe may still
@@ -309,7 +307,7 @@ def _check_auth_token(paths: Paths) -> CheckResult | None:
 
 
 def _check_get_models(client: httpx.Client) -> CheckResult:
-    """Check 4: ``GET /v1/models`` returns 2xx (httpx, hard timeout — D-90).
+    """``GET /v1/models`` returns 2xx (httpx, hard timeout — D-90).
 
     Probes UNAUTHENTICATED, exactly as Codex reaches loopback Moon Bridge — a
     present ``server.auth_token`` is reported by :func:`_check_auth_token`, not
@@ -342,7 +340,7 @@ def _check_get_models(client: httpx.Client) -> CheckResult:
 
 
 def _check_post_responses(client: httpx.Client) -> CheckResult:
-    """Check 5: ``POST /v1/responses`` (glm-5.2) returns 2xx (D-90).
+    """``POST /v1/responses`` (glm-5.2) returns 2xx (D-90).
 
     Sends a MINIMAL payload naming :data:`ZAI_MODEL` to the LOCAL Moon Bridge
     only (threat T-14-01 — never upstream Z.ai, never the API key in the
@@ -389,7 +387,7 @@ def _check_post_responses(client: httpx.Client) -> CheckResult:
 
 
 def _check_models_cache(paths: Paths) -> CheckResult:
-    """Check 6: ``models_cache.json`` has a glm-5.2 entry (READ ONLY — D-94).
+    """``models_cache.json`` has a glm-5.2 entry (READ ONLY — D-94).
 
     READ-ONLY: doctor does NOT write the entry (Phase 15's job — threat
     T-14-03). Missing → WARN (the Phase 15 fix is the remedy), not fail.
@@ -429,7 +427,7 @@ def _check_models_cache(paths: Paths) -> CheckResult:
 
 
 def _check_current_default(paths: Paths) -> CheckResult:
-    """Check 7: current default provider is Z.ai (reuse Phase 8 detection).
+    """current default provider is Z.ai (reuse Phase 8 detection).
 
     WARN (not fail) when the default is OpenAI — the user may have chosen it
     (D-89: informative, not broken). A missing config is also a WARN.
@@ -462,7 +460,7 @@ def _check_current_default(paths: Paths) -> CheckResult:
 
 
 def _check_launchagent_loaded(paths: Paths, runner: Runner) -> CheckResult:
-    """Check 8: LaunchAgent is loaded (reuse Phase 13 verify_service_loaded).
+    """LaunchAgent is loaded (reuse Phase 13 verify_service_loaded).
 
     Only the ``launchctl_loaded`` element is consulted — the port half is
     already covered by check 3 (do not double-report). WARN (not fail) when
@@ -495,7 +493,7 @@ def _check_launchagent_loaded(paths: Paths, runner: Runner) -> CheckResult:
 
 
 def _check_key_mode(paths: Paths) -> CheckResult:
-    """Check 9: ``moonbridge-zai.yml`` mode is exactly ``0600`` (SECR-02)."""
+    """``moonbridge-zai.yml`` mode is exactly ``0600`` (SECR-02)."""
     name = "key file mode"
     try:
         mode = stat.S_IMODE(os.stat(paths.moonbridge_yml).st_mode)
