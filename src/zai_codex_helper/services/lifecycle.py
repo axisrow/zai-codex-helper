@@ -14,8 +14,9 @@ Shared Label (D-85, SERV-03): :data:`LAUNCHAGENT_LABEL` imported from
 :data:`backends.plist.LABEL` — identity (not equality) ensures no orphan agents.
 
 Idempotence (D-84, SERV-02): ``uninstall_service`` swallows known already-booted-out
-conditions (rc 36, "Could not find service", "no such process"), same for
-``install_service`` + "already bootstrapped"; removes missing plist via ``missing_ok=True``.
+conditions ("could not find service", "input/output error", "no such process"),
+same for ``install_service`` + "already bootstrapped"; removes missing plist via
+``missing_ok=True``.
 
 Post-install verify (D-86, SERV-04): ``bootstrap`` exit 0 alone is insufficient.
 :func:`verify_service_loaded` runs ``launchctl print`` + TCP probe (127.0.0.1:38440).

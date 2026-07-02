@@ -15,10 +15,13 @@ The ordered check chain (DIAG-01, D-89):
   8. ``POST /v1/responses`` (``glm-5.2``) — slow upstream probe LAST (spinner,
      interruptible → WARN not FAIL).
 
+``models_cache.json`` glm-5.2 entry — READ-ONLY: doctor reads the cache and
+WARNs if the entry is absent (setup STEP 6.5 writes it; the missing entry makes
+Codex flag unknown-model metadata). An absent/missing/malformed cache is always a
+WARN, never a FAIL — an un-installed model never fails or crashes doctor.
+
 Codex Desktop detection (D-91, DIAG-03): ``pgrep`` check on darwin only → WARN
-if running (staleness hint). ``models_cache.json`` is NOT checked here — it is
-Codex's OpenAI-model catalog that the Phase 15 fix owns (read-merge-write to add
-the glm-5.2 entry), not part of this read-only chain.
+if running (staleness hint).
 
 HTTP hard timeout (D-90, DIAG-02): both probes share one :class:`httpx.Client`
 with split timeouts (short connect, longer read) — bounds T-14-01/T-14-02.
@@ -161,8 +164,8 @@ def render_check(result: CheckResult, *, color: bool | None = None) -> str:
 class CheckResult:
     """The outcome of a single doctor check (D-89, DIAG-01).
 
-    A pure value object: each check in the 9-check chain produces one. The
-    ``verdict`` is one of ``"pass"`` / ``"warn"`` / ``"fail"``:
+    A pure value object: each check in the ordered diagnostic chain produces one.
+    The ``verdict`` is one of ``"pass"`` / ``"warn"`` / ``"fail"``:
 
     - ``pass`` — the link is healthy (marker ``[OK]``).
     - ``warn`` — the link is non-fatal but worth surfacing (marker ``[!]``).
@@ -188,7 +191,7 @@ class CheckResult:
 
 
 # --------------------------------------------------------------------------- #
-# The 9 checks (DIAG-01, D-89) — each returns a CheckResult, never raises.
+# The diagnostic checks (DIAG-01, D-89) — each returns a CheckResult, never raises.
 # doctor catches per-check exceptions, marks the CheckResult fail, and
 # continues (per CONTEXT specifics: doctor owns its exit code; it does NOT
 # raise ZaiCodexHelperError per-check).
@@ -642,7 +645,7 @@ def run_doctor(
     post_check_runner: Callable[[Callable[[], CheckResult]], CheckResult | None]
     | None = None,
 ) -> int:
-    """Run the 9-check doctor pipeline and print colored verdicts (D-89..D-94).
+    """Run the doctor diagnostic pipeline and print colored verdicts (D-89..D-94).
 
     Walks the Codex ⇄ Moon Bridge ⇄ Z.ai chain link-by-link, collects a
     :class:`CheckResult` per check (plus the optional Codex Desktop WARN),
@@ -713,6 +716,10 @@ def run_doctor(
         _emit(_check_current_default(paths))
         _emit(_check_launchagent_loaded(paths, runner))
         _emit(_check_key_mode(paths))
+        # models_cache.json glm-5.2 entry — READ-ONLY (doctor never writes it;
+        # setup STEP 6.5 does). A missing/absent entry is a WARN, never a FAIL,
+        # so an un-installed model never crashes or fails doctor.
+        _emit(_check_models_cache(paths))
         # POST /v1/responses LAST — it is the slow probe (3–20s upstream
         # round-trip). If a post_check_runner is injected (TUI/CLI), run it in a
         # background thread with a spinner + interrupt (Esc / Ctrl-C); else
