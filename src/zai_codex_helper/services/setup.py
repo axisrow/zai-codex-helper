@@ -178,8 +178,9 @@ def run_setup(
         :class:`ZaiCodexHelperError` to ``main()``.
 
     Raises:
-        ZaiCodexHelperError: if headless + ZAI_API_KEY unset (D-79); if key
-            malformed; or if ``build_fn`` raises (D-82: no auto-install).
+        ZaiCodexHelperError: if headless + ZAI_API_KEY unset AND not dry_run
+            (D-79; under ``--yes --dry-run`` a placeholder key is used, no raise);
+            if key malformed; or if ``build_fn`` raises (D-82: no auto-install).
     """
     # ------------------------------------------------------------------ #
     # STEP 1 (D-76) — PROVIDER CHOICE.
