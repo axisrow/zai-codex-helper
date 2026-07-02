@@ -57,10 +57,11 @@ def atomic_write(path: str | Path, data: bytes | str, mode: int | None = None) -
        primitive never recursively deletes a tree that may hold user data or a
        mount point. Symlinks are NOT followed/removed. Then
        ``os.replace(temp, path)`` (atomic overwrite).
-    6. If ``mode is not None``, ``os.chmod(path, mode)`` AFTER replace (chmod
-       the destination, never the temp — a crash between replace and chmod
-       leaves a correctly-replaced file with old perms, not a half-applied
-       state). ``mode=None`` skips chmod entirely (preserve existing mode).
+    6. Set the destination mode AFTER replace (never the temp): an integer
+       ``mode`` → ``os.chmod(path, mode)``; ``mode=None`` over an EXISTING file →
+       restore that file's prior mode (captured from the lstat in step 5, since
+       the replace leaves the temp's mode); ``mode=None`` on a fresh write → the
+       temp default is kept.
 
     On ANY exception after temp creation: ``os.unlink(temp)`` cleanup then
     re-raise — the destination is never visible in a partial state and no
@@ -70,9 +71,10 @@ def atomic_write(path: str | Path, data: bytes | str, mode: int | None = None) -
     Args:
         path: Destination file (``str | Path``); parents are created if absent.
         data: Payload (``bytes`` written verbatim, ``str`` encoded UTF-8).
-        mode: ``None`` to preserve existing/umask mode (``config.toml``), or an
-            integer mode (e.g. ``0o600`` for secrets) applied via
-            ``os.chmod`` AFTER replace.
+        mode: ``None`` preserves the EXISTING file's mode when overwriting
+            (e.g. keep ``config.toml`` at its 0644); for a fresh write the file
+            gets the temp default. An integer (e.g. ``0o600`` for secrets) is
+            applied via ``os.chmod`` AFTER replace regardless.
 
     Returns:
         None — the observable side effect is the written file at ``path``.
@@ -113,6 +115,16 @@ def atomic_write(path: str | Path, data: bytes | str, mode: int | None = None) -
             st = os.lstat(dest)
         except OSError:
             st = None  # dest absent (fresh write) or unstattable → let replace decide
+        # mode=None means "preserve the existing file's mode" (config.toml). Capture
+        # it from the SAME lstat BEFORE the replace: after os.replace the file has
+        # the temp's mode (~0600), so without this an existing 0644 config.toml is
+        # silently narrowed. Only a real regular file has a mode worth preserving;
+        # a dir/symlink/fresh-write has none (prior_mode stays None → temp default).
+        prior_mode = (
+            stat.S_IMODE(st.st_mode)
+            if (mode is None and st is not None and stat.S_ISREG(st.st_mode))
+            else None
+        )
         if st is not None and stat.S_ISDIR(st.st_mode):
             os.rmdir(dest)  # empty-only; ENOTEMPTY → cleanup + re-raise (no data loss)
         os.replace(tmp_name, str(dest))  # atomic overwrite on POSIX/macOS
@@ -130,3 +142,7 @@ def atomic_write(path: str | Path, data: bytes | str, mode: int | None = None) -
         # A crash between replace and chmod leaves a correctly-replaced file
         # with the old perms, not a half-applied state.
         os.chmod(str(dest), mode)
+    elif prior_mode is not None:
+        # mode=None over an existing file → restore its prior mode (the temp's
+        # mode would otherwise stick — e.g. config.toml 0644 narrowed to 0600).
+        os.chmod(str(dest), prior_mode)

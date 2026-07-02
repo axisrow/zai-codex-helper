@@ -252,33 +252,18 @@ def test_write_canonical_accepts_tomlkit_document(tmp_path):
 
 
 @pytest.mark.unit
-def test_write_canonical_never_broadens_mode(tmp_path):
-    """T-05-04 / D-34: ``write_canonical(mode=None)`` never produces a mode
-    broader than the atomic-write temp default (``0o600``).
+def test_write_canonical_preserves_existing_mode(tmp_path):
+    """T-05-04 / D-34 (#27): ``write_canonical(mode=None)`` PRESERVES config.toml's mode.
 
-    NOTE — adapted to the REAL ``atomic_write`` behavior (the plan's D-35
-    principle: assert against the library's real behavior, document any gap):
-
-    The Phase 3 ``atomic_write`` docstring claims ``mode=None`` "preserves the
-    pre-existing destination's mode on overwrite". The IMPLEMENTATION does
-    not actually do this: ``os.replace`` swaps the file (and its mode)
-    wholesale, so the destination inherits the temp file's mode
-    (``NamedTemporaryFile`` default → ``0o600``). This is a Phase 3
-    docstring-vs-implementation mismatch, logged in
-    ``deferred-items.md`` (out of scope for Phase 5 — fixing it touches a
-    shared primitive and could regress Phase 9's ``0o600`` secrets path).
-
-    The load-bearing security invariant for T-05-04 (disposition: ``accept``)
-    still holds: ``write_canonical`` never chmods to a BROADER mode, so a
-    ``config.toml`` can never become world-readable through this path. The
-    observable contract is "final mode <= 0o600" (i.e. never broader than the
-    temp default), NOT "mode unchanged". For a default ``0644`` config this is
-    strictly MORE restrictive, never less.
+    CLAUDE.md: config.toml → "preserve existing mode; respect the user's existing
+    mode". A user's typical ``0644`` config must survive a patch as ``0644`` — NOT
+    be narrowed to the atomic-write temp default. (This previously asserted the
+    buggy "always 0o600" behavior; #27 fixed atomic_write to restore the prior
+    mode on overwrite, so the contract is now "mode unchanged".)
     """
     paths = Paths.from_home(tmp_path)
     _seed_config(paths)
-    # Seed a world-readable default (typical umask-produced mode for config.toml).
-    os.chmod(paths.config_toml, 0o644)
+    os.chmod(paths.config_toml, 0o644)  # typical umask-produced config.toml mode
     assert (os.stat(paths.config_toml).st_mode & 0o777) == 0o644
 
     backend = TomlBackend(paths)
@@ -286,14 +271,9 @@ def test_write_canonical_never_broadens_mode(tmp_path):
     backend.write_canonical(tomlkit.dumps(doc), mode=None)
 
     final_mode = os.stat(paths.config_toml).st_mode & 0o777
-    # Security invariant: never broader than the atomic-write temp default.
-    assert final_mode <= 0o600, (
-        f"mode broadened to {oct(final_mode)} (T-05-04 violation)"
+    assert final_mode == 0o644, (
+        f"mode=None must preserve the user's 0644, got {oct(final_mode)}"
     )
-    # Documented actual behavior: atomic_write(mode=None) yields exactly 0o600
-    # (NamedTemporaryFile default, inherited via os.replace). If this ever
-    # changes, revisit the deferred Phase 3 docstring/impl reconciliation.
-    assert final_mode == 0o600
 
 
 @pytest.mark.unit

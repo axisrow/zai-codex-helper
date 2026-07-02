@@ -156,6 +156,28 @@ def test_use_zai_makes_zai_default_on_disk_sc1(tmp_path):
     assert block["env_key"] == ZAI_PROVIDER_BLOCK["env_key"]
 
 
+@pytest.mark.integration
+def test_use_zai_preserves_config_toml_0644_mode(tmp_path):
+    """#27: `use zai` over a 0644 config.toml keeps it 0644 (does not narrow to 0600).
+
+    config.toml holds no secret; CLAUDE.md says preserve the user's existing mode.
+    Before the atomic_write fix, the patched file inherited the temp's ~0600.
+    """
+    import os
+    import stat
+
+    cfg = _config_toml(tmp_path)
+    _write(cfg, REALISTIC_OPENAI_DEFAULT)
+    os.chmod(cfg, 0o644)
+    assert stat.S_IMODE(os.stat(cfg).st_mode) == 0o644
+
+    assert main(["use", "zai"]) == 0
+
+    assert stat.S_IMODE(os.stat(cfg).st_mode) == 0o644, (
+        "use zai must preserve the user's 0644 config.toml, not narrow it"
+    )
+
+
 # =========================================================================== #
 # SC-2 (PROV-02) — `use openai` reverts AND preserves the Z.ai block (reversible)
 # =========================================================================== #
