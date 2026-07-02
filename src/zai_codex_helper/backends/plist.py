@@ -5,8 +5,9 @@ The concrete :class:`ConfigBackend` for the per-user LaunchAgent at
 load-bearing:
 
 1. **NO literal ``~`` anywhere in the plist** (threat T-09-04). launchd does not
-   expand ``~``, so every path is resolved ABSOLUTE off the injected
-   :class:`Paths` (its ``home`` is already a real ``/...`` path).
+   expand ``~``, so every path comes from the injected :class:`Paths` fields
+   (``moonbridge_binary`` / ``moonbridge_yml``), which are already ABSOLUTE
+   ``/...`` paths — never a literal ``~``.
 2. **``Label`` MUST be the exact string ``dev.zai.moonbridge``** (threat
    T-09-04b; ROADMAP Phase 13 SC-3). A drifted Label orphans the agent, so
    :data:`LABEL` is the single source of truth uninstall ``bootout``s.
@@ -62,9 +63,9 @@ def canonical_plist(paths: Paths) -> dict[str, Any]:
     alive and start it at login.
 
     Path resolution is load-bearing (threat T-09-04): launchd does NOT expand
-    ``~``, so both paths below are ABSOLUTE — resolved off the injected
-    ``paths.home`` (already a real ``/...`` path from
-    :meth:`Paths.from_home`), NEVER a literal ``~``.
+    ``~``, so both paths below come from the injected ``Paths`` fields
+    (``moonbridge_binary`` / ``moonbridge_yml``), already ABSOLUTE ``/...``
+    paths — NEVER a literal ``~``.
 
     Args:
         paths: The injected :class:`Paths` bundle (frozen, D-22). Both the
@@ -129,9 +130,9 @@ class PlistBackend(ConfigBackend):
         (``dev.zai.moonbridge``).
 
         Args:
-            paths: The injected :class:`Paths` bundle (frozen, D-22). Resolved
-                off ``paths.home`` (already a real ``/...`` path) — never a
-                literal ``~``.
+            paths: The injected :class:`Paths` bundle (frozen, D-22). The plist
+                path is ``paths.launchagents_dir`` + the fixed filename — an
+                absolute ``/...`` path, never a literal ``~``.
         """
         super().__init__(paths, "launchagents_dir")
         # Override: Paths exposes the directory; the backend owns the fixed

@@ -1,10 +1,12 @@
-"""Pure domain-services layer.
+"""Domain-services layer.
 
-Desired-state computation and transforms (e.g. ``apply_zai`` / ``apply_openai``)
-live here as pure functions with NO side effects — they compute the target
-state of the user's files and hand it to the backends layer to apply. Keeping
-this layer pure makes the transforms trivially unit-testable (input → output,
-no IO).
+The core here is the **pure** desired-state transforms (``apply_zai`` /
+``apply_openai`` / ``check_postconditions`` in :mod:`~zai_codex_helper.services.providers`):
+input → output, no IO, trivially unit-testable. The layer ALSO hosts the
+orchestrators that DO perform IO — ``setup``, ``install``, ``lifecycle``,
+``api_key``, ``provider_apply`` — which compose the pure transforms with the
+backends to actually write files and drive ``launchctl``. So "pure" describes
+the transforms, not the whole package.
 
 Phase 1: intentionally empty (transforms arrive in phases 6/7).
 

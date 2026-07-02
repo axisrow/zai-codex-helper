@@ -11,9 +11,12 @@ Raw single-key input (no line buffering) is the one non-trivial bit: it uses
 mode is ALWAYS restored — even on error or interrupt. Without that restore
 the user is left in a broken (cbreak) shell.
 
-Services/backends are NOT touched: this module only CALLS
-:func:`install_service` / :func:`uninstall_service` / :func:`run_doctor` and
-catches :class:`ZaiCodexHelperError` so a failed action returns to the menu
+This module adds no domain logic — it dispatches to the existing service
+functions: ``install_macro`` / ``uninstall_macro`` (the Install/Uninstall
+macros), ``apply_provider`` (the Z.ai toggle), ``set_key``, and ``run_doctor``.
+Those can write config.toml / moonbridge-zai.yml / models_cache.json / .zshrc
+and change service state — the TUI is a thin front-end over them, not read-only.
+It catches :class:`ZaiCodexHelperError` so a failed action returns to the menu
 instead of crashing the TUI (the D-11 one-line ``error: <msg>`` contract is
 honored here because the TUI owns its own event loop — unlike the thin CLI
 handlers, it cannot let the error propagate to ``main``).

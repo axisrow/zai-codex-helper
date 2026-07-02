@@ -113,9 +113,11 @@ class ConfigBackend(abc.ABC):
     def read(self) -> Any:
         """Return the parsed content; shape is backend-specific.
 
-        TOML/YAML backends return ``str``; a JSON backend returns a
-        ``dict``; the ABC does not constrain the type (D-29 — no real
-        file-format logic in Phase 4).
+        The concrete backends parse into their native type: ``TomlBackend``
+        returns a ``tomlkit.TOMLDocument``, ``YamlBackend`` the parsed YAML
+        object (a ``dict`` for canonical config, ``None`` for an empty file),
+        ``JsonBackend`` a ``dict``. The ABC does not constrain the type (D-29 —
+        no file-format logic here).
         """
 
     @abc.abstractmethod

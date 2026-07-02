@@ -9,10 +9,10 @@ the idempotency token that makes repeated setup safe).
 
 Layout (CLAUDE.md "File Permissions & Backup Conventions"):
 
-- Sentinel: ``~/.codex/.zai-codex-helper.backed-up`` (existence — not
-  content — is the gate; created via ``atomic_write`` so the
-  one-backup-per-user invariant survives a crash between copy and
-  sentinel).
+- Sentinel: PER-FILE ``codex_dir / (src.name + SENTINEL_NAME)`` (e.g.
+  ``config.toml.zai-codex-helper.backed-up``) — existence, not content, is the
+  gate; created via ``atomic_write`` so the one-backup-per-source invariant
+  survives a crash between copy and sentinel.
 - Sibling ``.bak``: ``config.toml`` + ``.zai-codex-helper.bak`` = the
   file the user can roll back to (D-28: a SIBLING of the source, NOT
   inside ``paths.backup_dir``).

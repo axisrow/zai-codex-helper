@@ -1,7 +1,8 @@
 """Build Moon Bridge binary from pinned SHA (D-69..D-75, DEPS-04, D-70..D-74).
 
 Builds Moon Bridge from the **pinned commit SHA** (never ``main``/``HEAD``/
-``master``) using Go 1.25+ into ``paths.codex_dir / "moon-bridge"``. The
+``master``) using Go 1.25+ into ``paths.moonbridge_binary``
+(``~/.codex/bin/moonbridge``). The
 ``runner`` parameter is the ONLY subprocess seam (D-74) — unit tests inject
 a recording fake for NO real git/go/network runs.
 
@@ -12,7 +13,7 @@ Sequence (D-69 steps 1-6):
   1. Idempotency (D-72): skip rebuild if binary exists + executable.
   2. Go gate (D-71): raise ZaiCodexHelperError if Go < 1.25.
   3. Clone + checkout pinned SHA (D-70).
-  4. ``go build -o <codex_dir>/moon-bridge ./cmd/moonbridge`` (cwd=clone_dir).
+  4. ``go build -o <moonbridge_binary> ./cmd/moonbridge`` (cwd=clone_dir).
   5. chmod 0o755 (SC-2).
   6. Cleanup tempdir (T-11-04).
 """
@@ -127,10 +128,11 @@ def build_moonbridge(
     force: bool = False,
     runner=subprocess.run,
 ) -> Path:
-    """Build Moon Bridge binary from pinned SHA into paths.codex_dir (D-69).
+    """Build Moon Bridge binary from pinned SHA into paths.moonbridge_binary (D-69).
 
     Args:
-        paths: injected Paths. Binary lands at paths.codex_dir / "moon-bridge".
+        paths: injected Paths. Binary lands at paths.moonbridge_binary
+            (``~/.codex/bin/moonbridge``).
         force: when True, rebuild even if binary exists (D-72). Default False.
         runner: subprocess seam (D-74); tests inject a fake.
 
@@ -173,7 +175,7 @@ def _run_clone_checkout_build(runner, clone_dir: str, binary: Path) -> None:
     Args:
         runner: injected subprocess seam.
         clone_dir: tempdir for clone; build runs with cwd=clone_dir.
-        binary: output binary path (paths.codex_dir / "moon-bridge").
+        binary: output binary path (paths.moonbridge_binary).
     """
     # #16: git/go must not inherit ZAI_API_KEY — none of them need it.
     env = child_env()

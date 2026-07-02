@@ -14,7 +14,8 @@ DECISIONS HONORED (D-76..D-82, D-98):
   flows ONLY to YamlBackend.write_canonical at 0600; NEVER to print_fn/logs.
 - **D-78:** LaunchAgent is confirm-only (prints install-service hint, no plist).
 - **D-79:** ``--yes`` → headless (provider defaults to zai; all prompts bypassed;
-  key REQUIRED from env).
+  key required from env — EXCEPT under ``--dry-run``, which uses a placeholder
+  and needs no env key).
 - **D-80:** idempotence via composition (every called primitive is idempotent).
 - **D-81:** lives in services/; all IO seams injected (input_fn, getpass_fn,
   confirm_fn, build_fn, environ, print_fn).
@@ -159,7 +160,7 @@ def run_setup(
     Args:
         paths: Resolved :class:`Paths` bundle.
         yes: Headless mode (D-79): bypass prompts, default provider to zai,
-            require ZAI_API_KEY env.
+            require ZAI_API_KEY env (except under dry_run, which uses a placeholder).
         dry_run: Preview mode (D-76): print diffs via print_fn, skip writes.
         provider: Explicit override (``"zai"`` / ``"openai"``); ``None`` →
             prompt (or zai under ``yes``).
