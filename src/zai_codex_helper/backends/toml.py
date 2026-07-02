@@ -93,18 +93,12 @@ class TomlBackend(ConfigBackend):
         that calls ``atomic_write(self._path, ..., mode)`` (D-29 structural
         delegation; never call ``atomic_write`` directly here).
 
-        ``mode`` defaults to ``None``, which is passed verbatim to
-        ``atomic_write``. The security-relevant invariant for ``config.toml``
-        (T-05-04, disposition ``accept``) holds: a ``None`` mode never
-        chmods to a BROADER mode than the atomic-write temp default
-        (``0o600``), so ``config.toml`` (which holds no secret) can never
-        become world-readable through this path. NOTE: the Phase 3
-        ``atomic_write`` docstring claims ``mode=None`` "preserves the
-        pre-existing destination's mode"; the implementation actually
-        inherits the temp file's ``0o600`` on overwrite (see
-        ``deferred-items.md`` — Phase 3 docstring/impl reconciliation is
-        out of scope for Phase 5). A caller MAY pass an explicit ``mode``
-        to force a specific permission.
+        ``mode`` defaults to ``None``, passed verbatim to ``atomic_write``,
+        which PRESERVES an existing ``config.toml``'s mode on overwrite (e.g.
+        keeps the user's 0644) and uses the temp default (``0o600``) only on a
+        first write — matching the CLAUDE.md "preserve existing mode; respect
+        the user's existing mode" contract (T-05-04, disposition ``accept``).
+        A caller MAY pass an explicit ``mode`` to force a specific permission.
 
         This method does NOT call ``backup_once``: the ABC surface gates
         backup at a higher layer (D-38 — primitives only).

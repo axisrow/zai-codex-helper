@@ -7,10 +7,10 @@ destination byte-for-byte preserved. The temp is a sibling of the destination
 (same-filesystem atomic rename), and ``os.fsync`` is called strictly before
 ``os.replace``.
 
-SC-2 (mode param): ``mode=None`` does NOT call ``os.chmod`` (the preserve /
-``config.toml`` branch); ``mode=0o600`` produces a destination whose
-``stat.S_IMODE`` is exactly ``0o600``; overwriting an existing ``0o600`` file
-with ``mode=None`` preserves ``0o600``.
+SC-2 (mode param): ``mode=0o600`` produces a destination whose ``stat.S_IMODE``
+is exactly ``0o600``; ``mode=None`` on a FRESH write keeps the temp default (no
+chmod); ``mode=None`` on an OVERWRITE preserves the existing file's mode (0600
+stays 0600, 0644 stays 0644 — the #27 fix); an explicit ``mode`` always wins.
 
 Cross-cutting: the helper never emits ``data`` via print/stdout/stderr
 (secrets discipline — API keys pass through it in Phase 9+), and it creates
@@ -196,9 +196,13 @@ def test_atomic_write_fsync_before_replace_order(tmp_path):
 # SC-2 — mode=None does NOT call os.chmod
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
-def test_atomic_write_mode_none_does_not_chmod(tmp_path):
-    """SC-2: mode=None is the preserve branch — os.chmod is NOT invoked."""
-    dest = tmp_path / "cfg.toml"
+def test_atomic_write_mode_none_fresh_write_does_not_chmod(tmp_path):
+    """mode=None on a FRESH write (dest absent) does NOT chmod — keeps temp default.
+
+    (On OVERWRITE, mode=None DOES chmod back to the prior mode — see the
+    preserve-mode tests below. This test pins the fresh-write branch only.)
+    """
+    dest = tmp_path / "cfg.toml"  # does not exist → fresh write
     chmod_calls: list[tuple] = []
 
     real_chmod = atomic_mod.os.chmod
@@ -228,23 +232,51 @@ def test_atomic_write_mode_0600_exact_permissions(tmp_path):
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
 def test_atomic_write_overwrite_preserves_pre_existing_0600(tmp_path):
-    """SC-2: rewriting a 0600 file with mode=None keeps it 0600.
+    """#27: rewriting a 0600 file with mode=None keeps it 0600.
 
-    os.replace on POSIX preserves the existing destination's mode; combined
-    with mode=None skipping chmod this is the 'preserve existing mode' contract
-    for config.toml-overwrite.
+    atomic_write captures the dest's prior mode before os.replace and chmods it
+    back (the replace itself leaves the temp's mode); mode=None therefore
+    preserves the existing file's perms — the config.toml-overwrite contract.
     """
     dest = tmp_path / "cfg.toml"
-    # first write creates a 0600 file
     atomic_write(dest, b"first", mode=0o600)
     assert stat.S_IMODE(os.stat(dest).st_mode) == 0o600
 
-    # second write with mode=None must NOT relax the 0600 perms
     atomic_write(dest, b"second", mode=None)
     assert dest.read_bytes() == b"second"
     assert stat.S_IMODE(os.stat(dest).st_mode) == 0o600, (
-        "mode=None overwrite must preserve pre-existing 0600 (os.replace keeps dest mode)"
+        "mode=None overwrite must preserve pre-existing 0600"
     )
+
+
+@pytest.mark.unit
+def test_atomic_write_overwrite_preserves_pre_existing_0644(tmp_path):
+    """#27 (THE bug): rewriting a 0644 file with mode=None keeps it 0644, not ~0600.
+
+    This is the case os.replace + no-chmod got wrong: the temp file is ~0600, so
+    an existing 0644 config.toml was silently narrowed. atomic_write now restores
+    the prior 0644 (CLAUDE.md 'preserve existing mode; respect the user's mode').
+    """
+    dest = tmp_path / "config.toml"
+    dest.write_bytes(b"original")
+    os.chmod(dest, 0o644)
+    assert stat.S_IMODE(os.stat(dest).st_mode) == 0o644
+
+    atomic_write(dest, b"patched", mode=None)
+    assert dest.read_bytes() == b"patched"
+    assert stat.S_IMODE(os.stat(dest).st_mode) == 0o644, (
+        "mode=None overwrite of a 0644 file must stay 0644, not narrow to the temp default"
+    )
+
+
+@pytest.mark.unit
+def test_atomic_write_explicit_mode_wins_over_existing(tmp_path):
+    """An explicit mode overrides the existing file's mode (regression guard)."""
+    dest = tmp_path / "cfg.toml"
+    dest.write_bytes(b"x")
+    os.chmod(dest, 0o644)
+    atomic_write(dest, b"y", mode=0o600)  # explicit → force 0600
+    assert stat.S_IMODE(os.stat(dest).st_mode) == 0o600
 
 
 # --------------------------------------------------------------------------- #

@@ -239,13 +239,13 @@ def test_shell_write_raw_writes_verbatim_no_fence(tmp_path):
 
 
 @pytest.mark.unit
-def test_shell_write_raw_mode_none_lands_0600(tmp_path):
-    """``write_raw(mode=None)`` lands the file at 0600 (the atomic-write tempfile
-    default) regardless of the file's PRIOR mode — it does NOT chmod/preserve.
+def test_shell_write_raw_mode_none_preserves_existing_mode(tmp_path):
+    """``write_raw(mode=None)`` PRESERVES an existing .zshrc's mode (#27).
 
-    Seed at 0644 so this actually exercises the behavior: mode=None tightens it
-    to 0600 (matching atomic_write's contract). This is unchanged from the old
-    direct ``atomic_write(..., mode=None)`` the refactor replaced.
+    A user's .zshrc is typically 0644; overwriting it must keep 0644, not narrow
+    it to the atomic-write temp default. (Previously this asserted the buggy
+    "always lands 0600"; #27 fixed atomic_write to restore the prior mode on
+    overwrite.)
     """
     import os
 
@@ -257,7 +257,7 @@ def test_shell_write_raw_mode_none_lands_0600(tmp_path):
     backend.write_raw("new\n")
 
     assert zshrc.read_text(encoding="utf-8") == "new\n"
-    assert (zshrc.stat().st_mode & 0o777) == 0o600  # mode=None → 0600, not 0644
+    assert (zshrc.stat().st_mode & 0o777) == 0o644  # mode=None preserves prior 0644
 
 
 @pytest.mark.unit

@@ -13,8 +13,9 @@ Contract (D-58, D-60):
 Module name is load-bearing (D-62): ``json_backend.py`` (not ``json.py``) avoids
 shadowing stdlib ``json``. Library discipline (D-61): stdlib ``json`` only.
 
-Mode handling (D-DEFERRED-01): ``mode=None`` defaults to tempfile's ``0o600`` (safe;
-API key lives in ``moonbridge-zai.yml``, not here). Beyond the generic
+Mode handling (D-DEFERRED-01): ``mode=None`` preserves an existing cache's mode
+(tempfile's ``0o600`` only on a first write) — safe either way; the API key
+lives in ``moonbridge-zai.yml``, not here. Beyond the generic
 deep-merge, :func:`merge_model_list` special-cases the ``models`` list
 (replace-by-slug) so the Phase 15 fix preserves the user's other model entries.
 """
