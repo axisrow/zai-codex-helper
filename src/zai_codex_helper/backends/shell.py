@@ -206,6 +206,27 @@ class ShellBackend(ConfigBackend):
         """
         # D-95: the fence shape lives in render_fence (single source of truth)
         # so the dry-run preview computes a byte-identical target.
+        rewritten = self.compose(content)
+        self._write_via_atomic(rewritten, mode)
+
+    def compose(self, content: str) -> str:
+        """Return the would-be WHOLE file text after upserting ``content`` (pure).
+
+        The pure (no-IO) half of :meth:`write_canonical`: builds the fence from
+        ``content`` via :meth:`render_fence`, then either replaces the existing
+        fenced section in place (if both markers are present) or appends a new
+        fence (markers absent) — exactly what :meth:`write_canonical` writes.
+        :meth:`write_canonical` delegates here; callers that need a dry-run
+        preview of the WHOLE file (so a diff against the current file is
+        apples-to-apples) call this directly.
+
+        Args:
+            content: The block body (shell helper text) WITHOUT the markers.
+
+        Returns:
+            The would-be whole-file text (user content + the new fence). Does
+            NOT write.
+        """
         fence = self.render_fence(content)
         text = self.read()
 
@@ -214,17 +235,13 @@ class ShellBackend(ConfigBackend):
             # _FENCE_RE is re.escape-ed on both markers + DOTALL, so this is a
             # literal-locator single substitution (T-09-02 mitigation) — the
             # body cannot escape the fence and no duplicate is appended.
-            rewritten = _FENCE_RE.sub(fence, text, count=1)
-        else:
-            # No markers → append. Ensure the fence starts on its own line:
-            # if there is existing text that doesn't end in a newline, add one
-            # separator. Empty text → fence only (no leading blank line).
-            if text and not text.endswith("\n"):
-                rewritten = f"{text}\n{fence}"
-            else:
-                rewritten = f"{text}{fence}"
-
-        self._write_via_atomic(rewritten, mode)
+            return _FENCE_RE.sub(fence, text, count=1)
+        # No markers → append. Ensure the fence starts on its own line:
+        # if there is existing text that doesn't end in a newline, add one
+        # separator. Empty text → fence only (no leading blank line).
+        if text and not text.endswith("\n"):
+            return f"{text}\n{fence}"
+        return f"{text}{fence}"
 
     def remove_block(self) -> None:
         """Delete the fenced section cleanly, leaving the rest of ``.zshrc`` (D-57).
