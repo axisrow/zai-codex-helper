@@ -34,6 +34,7 @@ from typing import Any
 from zai_codex_helper.backends.shell import ShellBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
+from zai_codex_helper.services.aliases import render_alias_body as _render_alias_body
 from zai_codex_helper.services.diff_preview import compute_diff, preview_yml_change
 from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.models_cache import (
@@ -59,17 +60,17 @@ __all__ = [
 
 
 #: The shell-helpers block BODY (D-76 step 4). Written verbatim INSIDE the
-#: ShellBackend marker fence. Minimal by design (D-82): two aliases pointing
-#: at the already-installed ``zai-codex-helper`` console script. The Moon
+#: ShellBackend marker fence. Minimal by design (D-82): aliases pointing
+#: at the already-installed ``zai-codex-helper`` console script (plus, since
+#: issue #29, the ``zai`` alias for the original npx helper). The Moon
 #: Bridge binary itself is launched by the Phase 13 LaunchAgent, NOT by
 #: ``.zshrc`` — so this block is a convenience marker / shortcut, never a
-#: launcher. Kept module-level so a future phase (or a doctor check) can
-#: read it as the single source of truth for the fenced body.
-SHELL_HELPERS_BODY = (
-    "# zai-codex-helper shell helpers — managed block (do not edit by hand)\n"
-    'alias codex-zai="zai-codex-helper use zai"\n'
-    'alias codex-openai="zai-codex-helper use openai"'
-)
+#: launcher. Re-exported (module-level) so the ``alias`` subcommand and a
+#: future doctor check read it as the single source of truth for the fence.
+#:
+#: Issue #29: rebuilt from :data:`aliases.ALIASES` (data registry) rather than
+#: a hardcoded literal, so ``setup`` and ``alias apply`` write the same fence.
+SHELL_HELPERS_BODY = _render_alias_body()
 
 #: The valid provider choices (D-76 step 1). ``"zai"`` is the default on
 #: empty / EOF / invalid input.
