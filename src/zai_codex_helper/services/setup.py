@@ -31,10 +31,14 @@ import sys
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from zai_codex_helper.backends.shell import ShellBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
-from zai_codex_helper.services.aliases import render_alias_body as _render_alias_body
+from zai_codex_helper.services.aliases import (
+    apply_aliases as _apply_aliases,
+)
+from zai_codex_helper.services.aliases import (
+    render_alias_body as _render_alias_body,
+)
 from zai_codex_helper.services.diff_preview import compute_diff, preview_yml_change
 from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.models_cache import (
@@ -298,19 +302,14 @@ def run_setup(
     else:
         shell_consent = confirm_fn("Add shell helpers to .zshrc?")
     if shell_consent:
-        if dry_run:
-            # D-95: preview the would-be .zshrc change as a REAL diff. The
-            # target is the fenced block ShellBackend.write_canonical WOULD
-            # insert — render_fence() is the single source of truth for the
-            # fence shape so the preview matches the real write byte-for-byte.
-            # (.zshrc holds no secret — no redaction needed; only the yml
-            # preview redacts.)
-            target = ShellBackend.render_fence(SHELL_HELPERS_BODY)
-            print_fn(compute_diff(paths.zshrc, target))
-        else:
-            # ShellBackend.write_canonical upserts the marker-fenced block
-            # replace-not-append (D-57) → exactly one fence, idempotent.
-            ShellBackend(paths).write_canonical(SHELL_HELPERS_BODY)
+        # Issue #29: route the shell-helpers write through apply_aliases so
+        # `setup` and `alias apply` share ONE line-granular, non-destructive
+        # path — unknown fence lines (version-skew aliases, comments, exports)
+        # are preserved, not erased. dry_run prints the would-be diff; a real
+        # run writes via the same backend fence.
+        result = _apply_aliases(paths, dry_run=dry_run)
+        if dry_run and result.diff:
+            print_fn(result.diff)
 
     # ------------------------------------------------------------------ #
     # STEP 6 (D-76 step 5) — APPLY THE CHOSEN PROVIDER.

@@ -124,6 +124,39 @@ def test_apply_aliases_writes_fence_with_all_three(tmp_path):
 
 
 @pytest.mark.integration
+def test_apply_aliases_full_sync_preserves_unrecognized_fence_lines(tmp_path):
+    """Full-sync (no names) must NOT erase fence content it doesn't know about.
+
+    Regression guard (issue #29 follow-up): like the named merge path, the
+    full-sync path (`alias apply` no-args, and `setup`) must preserve lines
+    this version's ALIASES doesn't know — a version-skew alias, a comment, an
+    export — verbatim. Only the known managed aliases are upserted; unknown
+    siblings are NOT erased.
+    """
+    from zai_codex_helper.backends.shell import ShellBackend
+
+    paths = _paths_with_zshrc(tmp_path)
+    # Fence with all current aliases PLUS a future-version alias + comment.
+    body = (
+        "# zai-codex-helper shell helpers — managed block (do not edit by hand)\n"
+        'alias zai="npx --yes @z_ai/coding-helper"\n'
+        'alias codex-zai="zai-codex-helper use zai"\n'
+        'alias codex-openai="zai-codex-helper use openai"\n'
+        'alias codex-claude="zai-codex-helper use claude"\n'
+        "# my note inside the managed block"
+    )
+    ShellBackend(paths).write_canonical(body)
+
+    result = apply_aliases(paths)  # full-sync, no names
+
+    assert result.changed is False  # all known aliases already canonical
+    after = paths.zshrc.read_text(encoding="utf-8")
+    # The version-skew alias + comment survive the full-sync.
+    assert 'alias codex-claude="zai-codex-helper use claude"' in after
+    assert "# my note inside the managed block" in after
+
+
+@pytest.mark.integration
 def test_apply_aliases_is_idempotent(tmp_path):
     paths = _paths_with_zshrc(tmp_path, "alias ll='ls -la'\n")
 

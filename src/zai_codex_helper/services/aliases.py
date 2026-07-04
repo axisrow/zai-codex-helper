@@ -161,24 +161,22 @@ def _diff_would_be(paths: Paths, would_be: str) -> tuple[bool, str]:
 def apply_aliases(
     paths: Paths, *, names: Iterable[str] | None = None, dry_run: bool = False
 ) -> AliasResult:
-    """Upsert aliases into the ``.zshrc`` fence.
+    """Upsert aliases into the ``.zshrc`` fence (line-granular, never destructive).
 
     Writes the marker-fenced block via :class:`ShellBackend` — the SAME block
-    ``setup`` writes. Two modes:
+    ``setup`` writes. Both modes MERGE into the current fence body via
+    :func:`_merge_into_current`: known managed aliases are upserted (in place
+    if present, appended if absent), and EVERY other line — including aliases
+    this version's :data:`ALIASES` does not know (version skew), comments, and
+    exports — is preserved verbatim. Nothing the user (or a future version)
+    placed in the fence is erased.
 
-    - **No names (default):** sync the FULL :data:`ALIASES` set — replace the
-      block wholesale. Idempotent (a second call is a no-op).
-    - **Named:** MERGE the requested aliases into the CURRENT fenced body,
-      preserving any other alias lines already there. ``alias add zai`` on a
-      fully-installed fence keeps ``codex-zai`` / ``codex-openai`` (issue #29 /
-      Codex review: the named path must not erase the rest).
+    - **No names (default):** upsert the FULL :data:`ALIASES` set.
+    - **Named:** upsert only the requested aliases.
 
-    Unknown names raise :class:`ZaiCodexHelperError` BEFORE any text is
-    composed — a typo cannot silently empty the fence.
-
-    The diff is computed against the would-be WHOLE file
-    (:meth:`ShellBackend.compose`, the pure half of ``write_canonical``), so a
-    no-op reports ``changed=False``.
+    Either way a re-apply on an already-canonical fence is a no-op
+    (``changed=False``). Unknown names raise :class:`ZaiCodexHelperError`
+    BEFORE any text is composed — a typo cannot silently empty the fence.
 
     Args:
         paths: Resolved :class:`Paths` (``paths.zshrc``).
@@ -191,12 +189,7 @@ def apply_aliases(
     """
     requested = _resolve(names)
     backend = ShellBackend(paths)
-
-    if names:
-        # Named path = MERGE into the current fence body, not replace.
-        body = _merge_into_current(backend, requested)
-    else:
-        body = render_alias_body(requested)
+    body = _merge_into_current(backend, requested)
 
     changed, diff = _diff_would_be(paths, backend.compose(body))
     if changed and not dry_run:
