@@ -20,6 +20,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from zai_codex_helper.backends.shell import _FENCE_RE, ShellBackend
+from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.diff_preview import NO_CHANGES, compute_diff
 from zai_codex_helper.services.paths import Paths
 
@@ -124,11 +125,25 @@ def _resolve(names: Iterable[str] | None) -> list[Alias]:
     An empty iterable means "all" — matches the ``alias apply`` CLI default
     (``nargs="*"`` yields ``[]`` when no names are given, which must sync the
     full set, not nothing).
+
+    Raises:
+        ZaiCodexHelperError: if any requested name is not a known alias. This
+            fails BEFORE any target text is composed, so a typo (e.g. ``alias
+            add zia``) cannot silently write a header-only fence and erase the
+            user's other managed aliases (issue #29 / Codex review regression).
     """
     if not names:
         return list(ALIASES)
-    wanted = set(names)
-    return [a for a in ALIASES if a.name in wanted]
+    wanted = list(names)
+    known = {a.name: a for a in ALIASES}
+    unknown = [n for n in wanted if n not in known]
+    if unknown:
+        raise ZaiCodexHelperError(
+            "unknown alias name(s): "
+            + ", ".join(unknown)
+            + f" (known: {', '.join(known)})"
+        )
+    return [known[n] for n in wanted]
 
 
 def _diff_would_be(paths: Paths, would_be: str) -> tuple[bool, str]:
@@ -146,32 +161,82 @@ def _diff_would_be(paths: Paths, would_be: str) -> tuple[bool, str]:
 def apply_aliases(
     paths: Paths, *, names: Iterable[str] | None = None, dry_run: bool = False
 ) -> AliasResult:
-    """Upsert the named aliases (default: all) into the ``.zshrc`` fence.
+    """Upsert aliases into the ``.zshrc`` fence.
 
     Writes the marker-fenced block via :class:`ShellBackend` — the SAME block
-    ``setup`` writes — so ``alias apply`` and ``setup`` never diverge. The
-    block is rebuilt wholesale from the alias set each call (replace-in-place
-    by the backend), which makes this idempotent: a second call with the same
-    set produces no change.
+    ``setup`` writes. Two modes:
+
+    - **No names (default):** sync the FULL :data:`ALIASES` set — replace the
+      block wholesale. Idempotent (a second call is a no-op).
+    - **Named:** MERGE the requested aliases into the CURRENT fenced body,
+      preserving any other alias lines already there. ``alias add zai`` on a
+      fully-installed fence keeps ``codex-zai`` / ``codex-openai`` (issue #29 /
+      Codex review: the named path must not erase the rest).
+
+    Unknown names raise :class:`ZaiCodexHelperError` BEFORE any text is
+    composed — a typo cannot silently empty the fence.
 
     The diff is computed against the would-be WHOLE file
     (:meth:`ShellBackend.compose`, the pure half of ``write_canonical``), so a
-    no-op re-run reports ``changed=False`` (the file already matches).
+    no-op reports ``changed=False``.
 
     Args:
         paths: Resolved :class:`Paths` (``paths.zshrc``).
-        names: Alias names to sync (default: the full :data:`ALIASES` set).
+        names: Alias names to add/sync (default: the full :data:`ALIASES`
+            set). Unknown names raise.
         dry_run: When True, write nothing and return the diff preview.
 
     Returns:
         :class:`AliasResult` with ``changed`` and the dry-run ``diff``.
     """
-    body = render_alias_body(_resolve(names))
+    requested = _resolve(names)
     backend = ShellBackend(paths)
+
+    if names:
+        # Named path = MERGE into the current fence body, not replace.
+        body = _merge_into_current(backend, requested)
+    else:
+        body = render_alias_body(requested)
+
     changed, diff = _diff_would_be(paths, backend.compose(body))
     if changed and not dry_run:
         backend.write_canonical(body)
     return AliasResult(changed=changed, diff=diff if dry_run else "")
+
+
+def _merge_into_current(backend: ShellBackend, requested: list[Alias]) -> str:
+    """Build the fence body = current aliases ∪ requested, in canonical order.
+
+    The result is the subset of :data:`ALIASES` whose names are EITHER already
+    present in the current fence OR explicitly requested. Canonical ALIASES
+    order is preserved, so a re-apply of an already-present name is a no-op
+    (idempotent) and the body never reorders.
+    """
+    requested_names = {a.name for a in requested}
+    current_names = _present_alias_names(backend.get_block())
+    keep = [a for a in ALIASES if a.name in current_names or a.name in requested_names]
+    return render_alias_body(keep)
+
+
+def _present_alias_names(body: str | None) -> set[str]:
+    """Return the alias names currently in the fence body (empty if no fence)."""
+    if not body:
+        return set()
+    names: set[str] = set()
+    for line in body.splitlines():
+        name = _alias_name(line)
+        if name is not None:
+            names.add(name)
+    return names
+
+
+def _alias_name(line: str) -> str | None:
+    """Return the alias name in an ``alias name="cmd"`` line, or ``None``."""
+    if not line.startswith("alias "):
+        return None
+    rest = line[len("alias ") :]
+    eq = rest.find("=")
+    return rest[:eq] if eq != -1 else None
 
 
 def remove_aliases(

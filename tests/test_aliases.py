@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.aliases import ALIASES, Alias, render_alias_body
 
 # --------------------------------------------------------------------------- #
@@ -146,16 +147,54 @@ def test_apply_aliases_dry_run_writes_nothing(tmp_path):
 
 
 @pytest.mark.integration
-def test_apply_aliases_subset_only_named(tmp_path):
-    """apply_aliases(names=['zai']) writes only the zai alias line."""
-    paths = _paths_with_zshrc(tmp_path)
+def test_apply_aliases_named_subset_merges_into_existing_fence(tmp_path):
+    """apply_aliases(names=['zai']) ADDS zai to the fence WITHOUT dropping the rest.
 
-    apply_aliases(paths, names=["zai"])
+    Regression guard (issue #29 / Codex review): the named-subset path must
+    MERGE into the current fenced body, not replace the block with only the
+    subset — otherwise `alias add zai` on a fully-installed fence silently
+    erases codex-zai / codex-openai.
+    """
+    paths = _paths_with_zshrc(tmp_path)
+    apply_aliases(paths)  # seed all three first
+
+    # Re-apply just one name — the OTHER two must survive.
+    result = apply_aliases(paths, names=["zai"])
 
     after = paths.zshrc.read_text(encoding="utf-8")
     assert 'alias zai="npx --yes @z_ai/coding-helper"' in after
-    assert "codex-zai" not in after
-    assert "codex-openai" not in after
+    assert "codex-zai" in after  # NOT dropped
+    assert "codex-openai" in after  # NOT dropped
+    # And the re-apply of an already-present alias is a no-op (idempotent).
+    assert result.changed is False
+
+
+@pytest.mark.integration
+def test_apply_aliases_unknown_name_raises(tmp_path):
+    """An unknown alias name must raise, not silently write an empty body.
+
+    Regression guard (Codex review): a typo like `alias add zia` must NOT exit
+    0 with a header-only fence (which would erase every alias line). It must
+    fail loudly with a user-facing error.
+    """
+    paths = _paths_with_zshrc(tmp_path)
+
+    with pytest.raises(ZaiCodexHelperError, match="unknown alias"):
+        apply_aliases(paths, names=["zia"])  # typo — not a known alias
+
+
+@pytest.mark.integration
+def test_apply_aliases_unknown_name_does_not_touch_file(tmp_path):
+    """An unknown name raises BEFORE any write — the .zshrc is untouched."""
+    paths = _paths_with_zshrc(tmp_path, "alias ll='ls -la'\n")
+    original = paths.zshrc.read_text(encoding="utf-8")
+
+    try:
+        apply_aliases(paths, names=["bogus"])
+    except ZaiCodexHelperError:
+        pass
+
+    assert paths.zshrc.read_text(encoding="utf-8") == original  # unchanged
 
 
 @pytest.mark.integration
@@ -170,6 +209,22 @@ def test_remove_aliases_drops_named_keeps_rest(tmp_path):
     assert "alias zai=" not in after
     # The codex-* aliases survive.
     assert 'alias codex-zai="zai-codex-helper use zai"' in after
+
+
+@pytest.mark.integration
+def test_remove_aliases_idempotent_when_present_but_named_absent(tmp_path):
+    """Fence EXISTS, the named alias is NOT in it → changed=False (M1 coverage).
+
+    Covers the fence-exists branch of remove_aliases that the
+    no-fence idempotency test misses (Claude subagent finding M1): removing an
+    alias already absent from an existing fence must be a no-op.
+    """
+    paths = _paths_with_zshrc(tmp_path)
+    apply_aliases(paths, names=["codex-zai", "codex-openai"])  # fence WITHOUT zai
+
+    result = remove_aliases(paths, names=["zai"])  # zai already absent
+
+    assert result.changed is False
 
 
 @pytest.mark.integration
