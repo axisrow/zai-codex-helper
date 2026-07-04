@@ -205,29 +205,37 @@ def apply_aliases(
 
 
 def _merge_into_current(backend: ShellBackend, requested: list[Alias]) -> str:
-    """Build the fence body = current aliases ∪ requested, in canonical order.
+    """Build the fence body = current lines with ``requested`` aliases upserted.
 
-    The result is the subset of :data:`ALIASES` whose names are EITHER already
-    present in the current fence OR explicitly requested. Canonical ALIASES
-    order is preserved, so a re-apply of an already-present name is a no-op
-    (idempotent) and the body never reorders.
+    Line-granular (issue #29 / Codex cycle-2): every current fence line that is
+    NOT one of the requested alias names is PRESERVED VERBATIM — including
+    aliases this version's registry does not know (version skew), comments, and
+    exports. Only ``alias <requested-name>=`` lines are replaced (with the
+    canonical form), and requested aliases not already present are appended.
+
+    The managed-block header line is preserved as-is (it is not an alias line,
+    so it falls through unchanged). A re-apply of an already-present,
+    already-canonical alias is a no-op (idempotent).
     """
-    requested_names = {a.name for a in requested}
-    current_names = _present_alias_names(backend.get_block())
-    keep = [a for a in ALIASES if a.name in current_names or a.name in requested_names]
-    return render_alias_body(keep)
-
-
-def _present_alias_names(body: str | None) -> set[str]:
-    """Return the alias names currently in the fence body (empty if no fence)."""
-    if not body:
-        return set()
-    names: set[str] = set()
-    for line in body.splitlines():
+    requested_by_name = {a.name: a for a in requested}
+    rendered_requested = {
+        name: f'alias {name}="{a.command}"' for name, a in requested_by_name.items()
+    }
+    current = backend.get_block() or ""
+    seen_requested: set[str] = set()
+    out_lines: list[str] = []
+    for line in current.splitlines():
         name = _alias_name(line)
-        if name is not None:
-            names.add(name)
-    return names
+        if name is not None and name in requested_by_name:
+            out_lines.append(rendered_requested[name])  # upsert in place
+            seen_requested.add(name)
+        else:
+            out_lines.append(line)  # preserve verbatim (unrecognized lines too)
+    # Append any requested alias that was not already present.
+    for name in requested_by_name:
+        if name not in seen_requested:
+            out_lines.append(rendered_requested[name])
+    return "\n".join(out_lines)
 
 
 def _alias_name(line: str) -> str | None:
@@ -257,29 +265,32 @@ def remove_aliases(
     if current_body is None:
         # No fence → nothing to remove. would-be == current.
         return AliasResult(changed=False, diff="")
-    # Preserve the managed-block header; drop only the matching alias lines.
+    # Drop only the matching alias lines; keep ALL other lines verbatim
+    # (comments, exports, version-skew aliases the registry doesn't know).
     kept_lines = [
         line
         for line in current_body.splitlines()
         if not any(line.startswith(prefix) for prefix in drop)
     ]
     kept_body = "\n".join(kept_lines)
-    if _alias_lines(kept_body):
+    # Only remove the whole fence when NOTHING meaningful remains — not just
+    # when no alias lines remain (a comment/export alone must keep the fence).
+    # The managed-block header is preserved in kept_body, so strip it before
+    # the emptiness check so a header-only remainder still collapses the fence.
+    has_content = any(
+        ln.strip() and not ln.lstrip().startswith("#") for ln in kept_lines
+    )
+    if has_content:
         would_be = backend.compose(kept_body)
     else:
         would_be = _without_fence(backend.read())
     changed, diff = _diff_would_be(paths, would_be)
     if changed and not dry_run:
-        if _alias_lines(kept_body):
+        if has_content:
             backend.write_canonical(kept_body)
         else:
             backend.remove_block()
     return AliasResult(changed=changed, diff=diff if dry_run else "")
-
-
-def _alias_lines(body: str) -> list[str]:
-    """Return the ``alias name="cmd"`` lines in ``body`` (non-comment, non-blank)."""
-    return [ln for ln in body.splitlines() if ln.startswith("alias ")]
 
 
 def _without_fence(text: str) -> str:

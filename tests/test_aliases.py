@@ -170,6 +170,70 @@ def test_apply_aliases_named_subset_merges_into_existing_fence(tmp_path):
 
 
 @pytest.mark.integration
+def test_apply_aliases_named_preserves_unrecognized_fence_lines(tmp_path):
+    """A named apply must NOT drop fence content this version doesn't know about.
+
+    Regression guard (Codex cycle-2): on version skew or an extended managed
+    block, the fence can contain lines not in this version's ALIASES — a
+    future-version alias, a comment, an export. The named merge path must
+    preserve those verbatim, not erase everything outside the known set.
+    """
+    from zai_codex_helper.backends.shell import ShellBackend
+
+    paths = _paths_with_zshrc(tmp_path)
+    # Seed a fence with a non-registry alias + a comment + an export line.
+    extra_body = (
+        "# zai-codex-helper shell helpers — managed block (do not edit by hand)\n"
+        'alias zai="npx --yes @z_ai/coding-helper"\n'
+        'alias codex-zai="zai-codex-helper use zai"\n'
+        'alias codex-openai="zai-codex-helper use openai"\n'
+        'alias codex-claude="zai-codex-helper use claude"\n'
+        "# a user note inside the managed block\n"
+        "export ZAI_HELPER_MANAGED=1"
+    )
+    ShellBackend(paths).write_canonical(extra_body)
+
+    apply_aliases(paths, names=["zai"])
+
+    after = paths.zshrc.read_text(encoding="utf-8")
+    # The known requested alias is present.
+    assert 'alias zai="npx --yes @z_ai/coding-helper"' in after
+    # Non-registry / version-skew content is PRESERVED verbatim.
+    assert 'alias codex-claude="zai-codex-helper use claude"' in after
+    assert "# a user note inside the managed block" in after
+    assert "export ZAI_HELPER_MANAGED=1" in after
+
+
+@pytest.mark.integration
+def test_remove_aliases_keeps_non_alias_fence_content_when_no_aliases_left(tmp_path):
+    """Removing the last alias must NOT delete unrelated non-alias fence content.
+
+    Regression guard (Codex cycle-2): if the fence has one alias PLUS a
+    comment/export, removing that alias must leave the non-alias content and
+    the fence in place — not nuke the whole block.
+    """
+    from zai_codex_helper.backends.shell import ShellBackend
+
+    paths = _paths_with_zshrc(tmp_path)
+    body = (
+        "# zai-codex-helper shell helpers — managed block (do not edit by hand)\n"
+        'alias zai="npx --yes @z_ai/coding-helper"\n'
+        "export ZAI_HELPER_MANAGED=1"
+    )
+    ShellBackend(paths).write_canonical(body)
+
+    result = remove_aliases(paths, names=["zai"])
+
+    assert result.changed is True
+    after = paths.zshrc.read_text(encoding="utf-8")
+    # The alias is gone…
+    assert "alias zai=" not in after
+    # …but the non-alias line AND the fence survive.
+    assert "export ZAI_HELPER_MANAGED=1" in after
+    assert "managed block" in after
+
+
+@pytest.mark.integration
 def test_apply_aliases_unknown_name_raises(tmp_path):
     """An unknown alias name must raise, not silently write an empty body.
 
