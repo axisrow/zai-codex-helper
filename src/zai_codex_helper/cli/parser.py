@@ -301,7 +301,9 @@ def _handle_alias_apply(args: argparse.Namespace) -> int:
     from zai_codex_helper.services.paths import Paths
 
     dry_run = getattr(args, "dry_run", False)
-    result = apply_aliases(Paths.default(), names=getattr(args, "names", None), dry_run=dry_run)
+    result = apply_aliases(
+        Paths.default(), names=getattr(args, "names", None), dry_run=dry_run
+    )
     if dry_run and result.diff:
         print(result.diff)
     if not result.changed:

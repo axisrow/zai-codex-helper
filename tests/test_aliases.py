@@ -167,7 +167,7 @@ def test_remove_aliases_drops_named_keeps_rest(tmp_path):
 
     assert result.changed is True
     after = paths.zshrc.read_text(encoding="utf-8")
-    assert 'alias zai=' not in after
+    assert "alias zai=" not in after
     # The codex-* aliases survive.
     assert 'alias codex-zai="zai-codex-helper use zai"' in after
 
@@ -238,7 +238,7 @@ def test_cli_alias_remove_drops_named():
     assert main(["alias", "remove", "zai"]) == 0
 
     after = Paths.default().zshrc.read_text(encoding="utf-8")
-    assert 'alias zai=' not in after
+    assert "alias zai=" not in after
     assert "codex-zai" in after  # the others survive
 
 
