@@ -273,12 +273,13 @@ def remove_aliases(
         if not any(line.startswith(prefix) for prefix in drop)
     ]
     kept_body = "\n".join(kept_lines)
-    # Only remove the whole fence when NOTHING meaningful remains — not just
-    # when no alias lines remain (a comment/export alone must keep the fence).
-    # The managed-block header is preserved in kept_body, so strip it before
-    # the emptiness check so a header-only remainder still collapses the fence.
+    # Only remove the whole fence when NOTHING meaningful remains. "Meaningful"
+    # = any non-blank line that is NOT the managed-block header — so a lone
+    # user comment, export, or version-skew alias keeps the fence, while a
+    # header-only (or header + blanks) remainder collapses it (issue #29 /
+    # Codex cycle-3: comments are content too, only the header is scaffolding).
     has_content = any(
-        ln.strip() and not ln.lstrip().startswith("#") for ln in kept_lines
+        ln.strip() and ln.strip() != _MANAGED_BLOCK_HEADER for ln in kept_lines
     )
     if has_content:
         would_be = backend.compose(kept_body)

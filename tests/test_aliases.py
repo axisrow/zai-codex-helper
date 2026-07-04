@@ -234,6 +234,34 @@ def test_remove_aliases_keeps_non_alias_fence_content_when_no_aliases_left(tmp_p
 
 
 @pytest.mark.integration
+def test_remove_aliases_keeps_user_comment_when_no_aliases_left(tmp_path):
+    """Removing the last alias must keep a user comment (not just the header/export).
+
+    Regression guard (Codex cycle-3): the emptiness check must treat ONLY the
+    managed-block header (and blanks) as non-content. A user comment alone is
+    real content and must keep the fence — not collapse it.
+    """
+    from zai_codex_helper.backends.shell import ShellBackend
+
+    paths = _paths_with_zshrc(tmp_path)
+    body = (
+        "# zai-codex-helper shell helpers — managed block (do not edit by hand)\n"
+        'alias zai="npx --yes @z_ai/coding-helper"\n'
+        "# my note about this block"
+    )
+    ShellBackend(paths).write_canonical(body)
+
+    result = remove_aliases(paths, names=["zai"])
+
+    assert result.changed is True
+    after = paths.zshrc.read_text(encoding="utf-8")
+    assert "alias zai=" not in after
+    # The user comment AND the fence survive.
+    assert "# my note about this block" in after
+    assert "managed block" in after
+
+
+@pytest.mark.integration
 def test_apply_aliases_unknown_name_raises(tmp_path):
     """An unknown alias name must raise, not silently write an empty body.
 
