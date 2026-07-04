@@ -247,3 +247,14 @@ def test_cli_alias_apply_idempotent_no_changes(capsys):
     main(["alias", "apply"])  # seed
     assert main(["alias", "apply"]) == 0  # idempotent re-run
     assert "no changes" in capsys.readouterr().out
+
+
+@pytest.mark.integration
+def test_cli_alias_add_upserts_named_alias():
+    """`alias add <name>` is the issue-#29 name for the upsert — same effect as apply."""
+    from zai_codex_helper.services.paths import Paths
+
+    assert main(["alias", "add", "zai"]) == 0
+
+    after = Paths.default().zshrc.read_text(encoding="utf-8")
+    assert 'alias zai="npx --yes @z_ai/coding-helper"' in after

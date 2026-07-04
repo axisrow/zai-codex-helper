@@ -485,6 +485,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="alias names to sync (default: all managed aliases)",
     )
     p_alias_apply.set_defaults(func=_handle_alias_apply)
+    # `add` is the issue-#29 name for the upsert of a named alias (same effect
+    # as `apply <names>`); kept as a distinct verb so the CLI matches the spec.
+    p_alias_add = alias_sub.add_parser(
+        "add",
+        help="add a named alias to the .zshrc fence (like `apply <name>`)",
+        parents=[sub_flags],
+    )
+    p_alias_add.add_argument("names", nargs="+", help="alias name(s) to add")
+    p_alias_add.set_defaults(func=_handle_alias_apply)
     p_alias_remove = alias_sub.add_parser(
         "remove",
         help="drop the named alias(es) from the .zshrc fence",
