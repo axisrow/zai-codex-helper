@@ -20,9 +20,9 @@ from zai_codex_helper.services.aliases import ALIASES, Alias, render_alias_body
 
 
 @pytest.mark.unit
-def test_registry_has_three_aliases():
+def test_registry_has_four_aliases():
     names = {a.name for a in ALIASES}
-    assert names == {"zai", "codex-zai", "codex-openai"}
+    assert names == {"zai", "glm", "codex-zai", "codex-openai"}
 
 
 @pytest.mark.unit
@@ -108,7 +108,14 @@ def _paths_with_zshrc(tmp_path, body: str = "") -> Paths:
 
 
 @pytest.mark.integration
-def test_apply_aliases_writes_fence_with_all_three(tmp_path):
+def test_apply_aliases_default_installs_only_codex_aliases(tmp_path):
+    """Bare apply (no names) installs the DEFAULT set only — zai is opt-in.
+
+    Regression guard (cycle-review, Codex): shipping `alias zai=...` by default
+    can shadow a user's existing `zai` and runs an unpinned remote npm package.
+    `zai` is opt-in (explicit `alias add zai`); the default full-sync installs
+    only codex-zai / codex-openai.
+    """
     paths = _paths_with_zshrc(tmp_path, "alias ll='ls -la'\n")
 
     result = apply_aliases(paths)
@@ -117,10 +124,22 @@ def test_apply_aliases_writes_fence_with_all_three(tmp_path):
     after = paths.zshrc.read_text(encoding="utf-8")
     # User content survives.
     assert "alias ll='ls -la'" in after
-    # All three managed aliases are present.
-    assert 'alias zai="npx --yes @z_ai/coding-helper"' in after
+    # Default aliases are present.
     assert 'alias codex-zai="zai-codex-helper use zai"' in after
     assert 'alias codex-openai="zai-codex-helper use openai"' in after
+    # The opt-in `zai` alias is NOT installed by the default full-sync.
+    assert "alias zai=" not in after
+
+
+@pytest.mark.integration
+def test_apply_aliases_add_zai_opt_in_installs_it(tmp_path):
+    """Explicit `alias add zai` (names=['zai']) still installs the zai alias."""
+    paths = _paths_with_zshrc(tmp_path)
+
+    apply_aliases(paths, names=["zai"])
+
+    after = paths.zshrc.read_text(encoding="utf-8")
+    assert 'alias zai="npx --yes @z_ai/coding-helper"' in after
 
 
 @pytest.mark.integration
@@ -193,7 +212,7 @@ def test_apply_aliases_dry_run_writes_nothing(tmp_path):
     # File untouched on dry-run.
     assert paths.zshrc.read_text(encoding="utf-8") == "alias ll='ls -la'\n"
     # Diff preview is produced.
-    assert result.diff and "alias zai" in result.diff
+    assert result.diff and "alias codex-zai" in result.diff
 
 
 @pytest.mark.integration
@@ -206,7 +225,9 @@ def test_apply_aliases_named_subset_merges_into_existing_fence(tmp_path):
     erases codex-zai / codex-openai.
     """
     paths = _paths_with_zshrc(tmp_path)
-    apply_aliases(paths)  # seed all three first
+    # Seed the full canonical set (default codex-* + the opt-in zai explicitly).
+    apply_aliases(paths)
+    apply_aliases(paths, names=["zai"])
 
     # Re-apply just one name — the OTHER two must survive.
     result = apply_aliases(paths, names=["zai"])
@@ -342,7 +363,8 @@ def test_apply_aliases_unknown_name_does_not_touch_file(tmp_path):
 @pytest.mark.integration
 def test_remove_aliases_drops_named_keeps_rest(tmp_path):
     paths = _paths_with_zshrc(tmp_path)
-    apply_aliases(paths)  # seed all three
+    apply_aliases(paths)  # seed the default codex-* set
+    apply_aliases(paths, names=["zai"])  # plus the opt-in zai
 
     result = remove_aliases(paths, names=["zai"])
 
@@ -390,6 +412,20 @@ def test_list_aliases_reports_presence(tmp_path, capsys):
     assert "absent" in out or "not installed" in out or "missing" in out
 
 
+@pytest.mark.integration
+def test_list_aliases_marks_opt_in(tmp_path, capsys):
+    """list_aliases shows which aliases are opt-in (not auto-installed)."""
+    paths = _paths_with_zshrc(tmp_path)
+
+    list_aliases(paths)
+
+    out = capsys.readouterr().out
+    lines = {ln.split()[0]: ln for ln in out.splitlines() if ln.strip()}
+    # codex-* are default; zai is opt-in.
+    assert "default" in lines["codex-zai"]
+    assert "opt-in" in lines["zai"]
+
+
 # --------------------------------------------------------------------------- #
 # End-to-end through `main([...])` — the `alias` subcommand wires the service
 # functions to argparse (issue #29 Part 2 step 2).
@@ -406,7 +442,9 @@ def test_cli_alias_apply_writes_fence():
     from zai_codex_helper.services.paths import Paths
 
     after = Paths.default().zshrc.read_text(encoding="utf-8")
-    assert 'alias zai="npx --yes @z_ai/coding-helper"' in after
+    # Bare `alias apply` installs the DEFAULT set only — zai is opt-in.
+    assert 'alias codex-zai="zai-codex-helper use zai"' in after
+    assert "alias zai=" not in after
 
 
 @pytest.mark.integration
@@ -417,7 +455,7 @@ def test_cli_alias_apply_dry_run_no_write(capsys):
     # No file written under dry-run.
     assert not Paths.default().zshrc.exists()
     out = capsys.readouterr().out
-    assert "alias zai" in out  # diff preview printed
+    assert "alias codex-zai" in out  # diff preview printed
 
 
 @pytest.mark.integration

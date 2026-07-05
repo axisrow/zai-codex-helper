@@ -27,6 +27,8 @@ from zai_codex_helper.services.paths import Paths
 __all__ = [
     "Alias",
     "ALIASES",
+    "DEFAULT_ALIASES",
+    "OPT_IN_ALIASES",
     "AliasResult",
     "render_alias_body",
     "apply_aliases",
@@ -48,15 +50,11 @@ class Alias:
     description: str
 
 
-#: The default managed-alias set. ``zai`` is NEW (issue #29): the original Z.ai
-#: coding-helper via npx, not in any menu today. ``codex-zai`` / ``codex-openai``
-#: moved here from the old hardcoded ``SHELL_HELPERS_BODY`` literal.
-ALIASES: list[Alias] = [
-    Alias(
-        name="zai",
-        command="npx --yes @z_ai/coding-helper",
-        description="original Z.ai coding-helper (npx)",
-    ),
+#: The aliases installed by the DEFAULT full-sync (``setup`` / bare ``alias
+#: apply``). ``zai`` is deliberately NOT here — it is opt-in (cycle-review,
+#: Codex): shipping ``alias zai="npx --yes @z_ai/coding-helper"`` by default
+#: can shadow a user's existing ``zai`` and runs an unpinned remote npm package.
+DEFAULT_ALIASES: list[Alias] = [
     Alias(
         name="codex-zai",
         command="zai-codex-helper use zai",
@@ -68,6 +66,32 @@ ALIASES: list[Alias] = [
         description="switch Codex → OpenAI",
     ),
 ]
+
+#: Aliases available only via an EXPLICIT ``alias add <name>`` (opt-in). They
+#: are NOT installed by ``setup`` or a bare ``alias apply``.
+#:
+#: ``glm`` is a sentinel — it is NOT a fence alias string. It is a generated
+#: bash wrapper script (see :mod:`zai_codex_helper.services.glm_script`); the
+#: sentinel exists so ``alias list`` shows it and ``alias add glm`` / ``alias
+#: remove glm`` are valid names. apply/remove route ``glm`` to the glm service
+#: instead of the fence path.
+OPT_IN_ALIASES: list[Alias] = [
+    Alias(
+        name="zai",
+        command="npx --yes @z_ai/coding-helper",
+        description="original Z.ai coding-helper (npx) [opt-in]",
+    ),
+    Alias(
+        name="glm",
+        command="<generated wrapper script>",
+        description="Claude Code → Z.ai (glm wrapper) [opt-in]",
+    ),
+]
+
+#: The full registry — every alias the helper knows (default + opt-in). Used by
+#: ``list_aliases`` (display) and ``_resolve`` (name validation). The install
+#: default is :data:`DEFAULT_ALIASES`, NOT this full set.
+ALIASES: list[Alias] = DEFAULT_ALIASES + OPT_IN_ALIASES
 
 #: The managed-block header comment. EXACT wording — the historical
 #: ``SHELL_HELPERS_BODY`` and ``tests/test_zshrc.py`` match this literal, so
@@ -133,7 +157,9 @@ def _resolve(names: Iterable[str] | None) -> list[Alias]:
             user's other managed aliases (issue #29 / Codex review regression).
     """
     if not names:
-        return list(ALIASES)
+        # Empty/None names = the DEFAULT full-sync set (NOT the full registry):
+        # opt-in aliases (zai) are installed only via an explicit name.
+        return list(DEFAULT_ALIASES)
     wanted = list(names)
     known = {a.name: a for a in ALIASES}
     unknown = [n for n in wanted if n not in known]
@@ -171,8 +197,13 @@ def apply_aliases(
     exports — is preserved verbatim. Nothing the user (or a future version)
     placed in the fence is erased.
 
-    - **No names (default):** upsert the FULL :data:`ALIASES` set.
+    - **No names (default):** upsert the :data:`DEFAULT_ALIASES` set.
     - **Named:** upsert only the requested aliases.
+
+    ``glm`` is special — it is NOT a fence line but a generated wrapper script
+    (see :mod:`zai_codex_helper.services.glm_script`). When ``glm`` is among
+    ``names``, it is routed to :func:`install_glm` and removed from the fence
+    name set; the remaining names follow the normal fence path.
 
     Either way a re-apply on an already-canonical fence is a no-op
     (``changed=False``). Unknown names raise :class:`ZaiCodexHelperError`
@@ -180,21 +211,45 @@ def apply_aliases(
 
     Args:
         paths: Resolved :class:`Paths` (``paths.zshrc``).
-        names: Alias names to add/sync (default: the full :data:`ALIASES`
-            set). Unknown names raise.
+        names: Alias names to add/sync (default: :data:`DEFAULT_ALIASES`).
+            Unknown names raise. ``glm`` routes to the glm script service.
         dry_run: When True, write nothing and return the diff preview.
 
     Returns:
         :class:`AliasResult` with ``changed`` and the dry-run ``diff``.
     """
-    requested = _resolve(names)
-    backend = ShellBackend(paths)
-    body = _merge_into_current(backend, requested)
+    name_list = list(names) if names else []
+    # Route the glm sentinel to its script service; the rest follow the fence.
+    changed_any = False
+    diff_parts: list[str] = []
+    fence_names: list[str] = []
+    for n in name_list:
+        if n == _GLM_NAME:
+            from zai_codex_helper.services.glm_script import install_glm
 
-    changed, diff = _diff_would_be(paths, backend.compose(body))
-    if changed and not dry_run:
-        backend.write_canonical(body)
-    return AliasResult(changed=changed, diff=diff if dry_run else "")
+            if install_glm(paths, dry_run=dry_run):
+                changed_any = True
+        else:
+            fence_names.append(n)
+
+    if fence_names or not name_list:
+        # Fence path: explicit names (minus glm) OR the bare-apply default.
+        requested = _resolve(fence_names or None)
+        backend = ShellBackend(paths)
+        body = _merge_into_current(backend, requested)
+        changed, diff = _diff_would_be(paths, backend.compose(body))
+        if changed and not dry_run:
+            backend.write_canonical(body)
+        changed_any = changed_any or changed
+        if dry_run and diff:
+            diff_parts.append(diff)
+    return AliasResult(
+        changed=changed_any, diff="\n".join(diff_parts) if dry_run else ""
+    )
+
+
+#: The opt-in alias name that is a generated script, not a fence line.
+_GLM_NAME = "glm"
 
 
 def _merge_into_current(backend: ShellBackend, requested: list[Alias]) -> str:
@@ -258,13 +313,29 @@ def remove_aliases(
     removing leaves the fence empty, the whole fenced block is removed.
     Idempotent: removing an alias already absent from the fence reports
     ``changed=False``.
+
+    ``glm`` is special — it is a generated wrapper script, not a fence line.
+    When ``glm`` is among ``names``, it is routed to
+    :func:`uninstall_glm` and removed from the fence drop set.
     """
-    drop = {f"alias {n}=" for n in names}
+    # Route the glm sentinel to its script service; the rest follow the fence.
+    name_list = list(names)
+    changed_any = False
+    if _GLM_NAME in name_list:
+        from zai_codex_helper.services.glm_script import uninstall_glm
+
+        if uninstall_glm(paths, dry_run=dry_run):
+            changed_any = True
+        name_list = [n for n in name_list if n != _GLM_NAME]
+        if not name_list:
+            return AliasResult(changed=changed_any, diff="")
+
+    drop = {f"alias {n}=" for n in name_list}
     backend = ShellBackend(paths)
     current_body = backend.get_block()
     if current_body is None:
         # No fence → nothing to remove. would-be == current.
-        return AliasResult(changed=False, diff="")
+        return AliasResult(changed=changed_any, diff="")
     # Drop only the matching alias lines; keep ALL other lines verbatim
     # (comments, exports, version-skew aliases the registry doesn't know).
     kept_lines = [
@@ -291,7 +362,7 @@ def remove_aliases(
             backend.write_canonical(kept_body)
         else:
             backend.remove_block()
-    return AliasResult(changed=changed, diff=diff if dry_run else "")
+    return AliasResult(changed=changed or changed_any, diff=diff if dry_run else "")
 
 
 def _without_fence(text: str) -> str:
@@ -313,7 +384,16 @@ def list_aliases(paths: Paths, *, print_fn=print) -> None:
     Read-only (no write). ``print_fn`` is injectable for tests.
     """
     body = ShellBackend(paths).get_block() or ""
+    opt_in_names = {a.name for a in OPT_IN_ALIASES}
+    # glm is a generated script, not a fence line — its presence is the file.
+    from zai_codex_helper.services.glm_script import glm_script_path
+
+    glm_present = glm_script_path(paths).exists()
     for a in ALIASES:
-        present = f'alias {a.name}="{a.command}"' in body
+        if a.name == _GLM_NAME:
+            present = glm_present
+        else:
+            present = f'alias {a.name}="{a.command}"' in body
         state = "installed" if present else "absent"
-        print_fn(f"{a.name:18} {state:10} {a.description}")
+        kind = "opt-in" if a.name in opt_in_names else "default"
+        print_fn(f"{a.name:18} {state:10} {kind:8} {a.description}")
