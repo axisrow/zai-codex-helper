@@ -124,6 +124,23 @@ def test_apply_aliases_writes_fence_with_all_three(tmp_path):
 
 
 @pytest.mark.integration
+def test_apply_aliases_emits_managed_block_header_on_fresh_install(tmp_path):
+    """A fresh install (no fence yet) must include the managed-block header.
+
+    Regression guard (cycle-review, post-followup): when apply_aliases merged
+    line-granular even on the full-sync path, a fresh fence (get_block() None)
+    lost the ``# ... managed block (do not edit by hand)`` header — the header
+    is scaffolding, not an alias, so the merge appended only aliases.
+    """
+    paths = _paths_with_zshrc(tmp_path)  # no fence yet
+
+    apply_aliases(paths)
+
+    after = paths.zshrc.read_text(encoding="utf-8")
+    assert "managed block (do not edit by hand)" in after
+
+
+@pytest.mark.integration
 def test_apply_aliases_full_sync_preserves_unrecognized_fence_lines(tmp_path):
     """Full-sync (no names) must NOT erase fence content it doesn't know about.
 

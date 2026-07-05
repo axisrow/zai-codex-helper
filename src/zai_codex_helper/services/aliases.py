@@ -228,6 +228,13 @@ def _merge_into_current(backend: ShellBackend, requested: list[Alias]) -> str:
     for name in requested_by_name:
         if name not in seen_requested:
             out_lines.append(rendered_requested[name])
+    # Guarantee the managed-block header on a fresh fence (cycle-review
+    # post-followup): when there was no current fence, get_block() returned
+    # None and the loop above emitted only alias lines — losing the
+    # ``# ... managed block (do not edit by hand)`` scaffolding. Prepend it if
+    # absent so a fresh install matches the historical fenced shape.
+    if _MANAGED_BLOCK_HEADER not in out_lines:
+        out_lines.insert(0, _MANAGED_BLOCK_HEADER)
     return "\n".join(out_lines)
 
 
