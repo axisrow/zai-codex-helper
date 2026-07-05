@@ -99,3 +99,19 @@ def uninstall_macro(paths: Paths, *, dry_run: bool = False) -> None:
     else:
         paths.moonbridge_yml.unlink(missing_ok=True)
         print(f"removed {paths.moonbridge_yml}")
+    # 4. Remove the managed alias block from .zshrc (the aliases the install set
+    #    up). remove_block is idempotent — a no-op when no fence is present.
+    from zai_codex_helper.backends.shell import ShellBackend
+
+    if dry_run:
+        print(f"would remove managed alias block from {paths.zshrc}")
+    else:
+        ShellBackend(paths).remove_block()
+    # 5. Remove the generated glm wrapper script if present (opt-in; may be absent).
+    from zai_codex_helper.services.glm_script import glm_script_path
+
+    glm = glm_script_path(paths)
+    if dry_run:
+        print(f"would remove {glm}")
+    else:
+        glm.unlink(missing_ok=True)
