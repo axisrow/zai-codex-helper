@@ -395,6 +395,6 @@ def list_aliases(paths: Paths, *, print_fn=print) -> None:
             present = glm_present
         else:
             present = f'alias {a.name}="{a.command}"' in body
-        state = "installed" if present else "absent"
+        state = "installed" if present else "not installed"
         kind = "opt-in" if a.name in opt_in_names else "default"
-        print_fn(f"{a.name:18} {state:10} {kind:8} {a.description}")
+        print_fn(f"{a.name:18} {state:13} {kind:8} {a.description}")

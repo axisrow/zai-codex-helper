@@ -408,8 +408,9 @@ def test_list_aliases_reports_presence(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert "zai" in out
-    # Before apply, the alias is absent.
-    assert "absent" in out or "not installed" in out or "missing" in out
+    # Before apply, the alias is not installed — rendered as "not installed"
+    # (the same wording the TUI submenu uses, not the terse "absent").
+    assert "not installed" in out
 
 
 @pytest.mark.integration
