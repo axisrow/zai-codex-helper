@@ -219,6 +219,29 @@ def test_run_arrow_keys_and_quit(monkeypatch):
 
 
 @pytest.mark.unit
+def test_run_ctrl_c_exits_cleanly(monkeypatch):
+    """Ctrl+C (KeyboardInterrupt during _read_key) → exit 0, no traceback.
+
+    The TUI holds the terminal in cbreak; an unhandled KeyboardInterrupt would
+    dump a traceback AND the finally must still restore termios. The contract:
+    Ctrl+C is a clean quit (like Esc/q), not a crash.
+    """
+    monkeypatch.setattr(tui.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tui.termios, "tcgetattr", lambda fd: None)
+    restored = []
+    monkeypatch.setattr(tui.termios, "tcsetattr", lambda *a, **k: restored.append(True))
+    monkeypatch.setattr(tui.tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr(tui, "_state", lambda paths: (False, False, "OpenAI"))
+
+    def raise_kbi():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(tui, "_read_key", raise_kbi)
+    assert tui.run(_ns()) == 0  # clean exit, not a propagated KeyboardInterrupt
+    assert restored == [True]  # termios restored even on Ctrl+C
+
+
+@pytest.mark.unit
 def test_run_disabled_macro_shows_message_and_pauses(monkeypatch, capsys):
     """Enter on a disabled macro prints 'already in this state' + pauses (no dispatch)."""
     monkeypatch.setattr(tui.sys, "stdin", _FakeStdin())

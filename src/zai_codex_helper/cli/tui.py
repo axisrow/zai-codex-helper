@@ -378,6 +378,10 @@ def run(args: argparse.Namespace) -> int:
                 _pause()
             elif key in ("ESC", "q"):
                 return 0
+    except KeyboardInterrupt:
+        # Ctrl+C during _read_key — a clean quit, not a crash. The `finally`
+        # below still restores termios so the shell isn't left in cbreak.
+        return 0
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
