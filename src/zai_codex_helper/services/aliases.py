@@ -374,12 +374,11 @@ def remove_aliases(
 def is_alias_installed(paths: Paths, name: str) -> bool:
     """True iff alias ``name`` is currently installed.
 
-    Strict by exact body, so uninstall only ever touches what the helper
-    created: a fence alias (zai) is "installed" iff its canonical
-    ``alias name="cmd"`` line is in the managed fence; ``glm`` iff the wrapper
-    script exists AND its bytes match what the helper generates (a foreign
-    ~/.local/bin/glm is not ours). The single predicate for list_aliases, the
-    TUI submenu, and the apply/remove toggles.
+    Ownership is strict so uninstall only ever touches what the helper created:
+    a fence alias (zai) is "installed" iff its canonical ``alias name="cmd"``
+    line is in the managed fence; ``glm`` iff the wrapper script carries the
+    helper marker (a foreign ~/.local/bin/glm is not ours). The single predicate
+    for list_aliases, the TUI submenu, and the apply/remove toggles.
     """
     if name == _GLM_NAME:
         from zai_codex_helper.services.glm_script import is_glm_installed

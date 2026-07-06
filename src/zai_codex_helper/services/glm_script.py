@@ -97,15 +97,20 @@ def render_glm_script(api_key: str) -> str:
 
 
 def _read_api_key(paths: Paths) -> str:
-    """Return the Z.ai api_key from the persistent ``moonbridge-zai.yml`` copy.
+    """Return the validated Z.ai api_key from the persistent yml copy.
 
-    The yml is the ONLY persistent copy of the key (the helper never echoes it
-    elsewhere). Reads via :func:`get_api_key` (the yml-vocabulary owner) so the
-    ``providers.<name>.api_key`` shape has one accessor. Raises
-    :class:`ZaiCodexHelperError` if the yml or the key is absent — ``glm``
-    requires Z.ai to be set up first.
+    The yml is the ONLY persistent copy of the key. Reads via :func:`get_api_key`
+    (the yml-vocabulary owner) and VALIDATES the value against the strict Z.ai
+    format before returning it — the key is interpolated into a generated
+    executable, so a foreign/malformed yml value (e.g. one containing a single
+    quote) must fail closed here, not reach :func:`render_glm_script` where
+    single-quoting alone is not a complete injection guard.
+
+    Raises :class:`ZaiCodexHelperError` if the yml is missing, the key is
+    absent, or the value fails validation.
     """
     from zai_codex_helper.services.moonbridge_yml import get_api_key
+    from zai_codex_helper.services.setup import validate_api_key
 
     if not paths.moonbridge_yml.exists():
         raise ZaiCodexHelperError(
@@ -123,6 +128,14 @@ def _read_api_key(paths: Paths) -> str:
             "providers.zai.api_key missing from moonbridge-zai.yml — glm needs "
             "the Z.ai key; run `zai-codex-helper set-key`"
         )
+    try:
+        validate_api_key(key)
+    except ZaiCodexHelperError:
+        raise ZaiCodexHelperError(
+            "providers.zai.api_key in moonbridge-zai.yml is not a valid Z.ai key "
+            "(expected <32-hex>.<16-alnum>) — refusing to embed an unvalidated "
+            "value in the glm wrapper; run `zai-codex-helper set-key`"
+        ) from None
     return key
 
 

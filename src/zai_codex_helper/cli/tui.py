@@ -171,10 +171,11 @@ def _aliases_submenu(paths, args: argparse.Namespace) -> None:
     """Arrow-key submenu for the opt-in aliases (zai, glm). Returns to main menu.
 
     Three items: zai, glm, Back. Each alias shows live state — ``[installed]``
-    or ``[not installed]`` (strict: glm matches only the helper's exact script
-    body; a foreign ~/.local/bin/glm is "not installed"). The footer hint is
-    contextual on the selected item: ``Enter to install`` when not installed,
-    ``Enter to uninstall`` when installed, ``Enter to go back`` on Back.
+    or ``[not installed]`` (strict: glm is "ours" iff the script carries the
+    helper marker; a foreign ~/.local/bin/glm is "not installed"). The footer
+    hint is contextual on the selected item: ``Enter to install`` when not
+    installed, ``Enter to uninstall`` when installed, ``Enter to go back`` on
+    Back.
     Selecting an alias TOGGLES it (install via :func:`apply_aliases` if absent,
     remove via :func:`remove_aliases` if present — both route ``glm`` to the
     script service). Esc / Back returns to the main menu. cbreak is already

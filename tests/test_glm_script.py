@@ -142,6 +142,24 @@ def test_install_glm_raises_without_yml_key(tmp_path):
         install_glm(paths)
 
 
+@pytest.mark.integration
+def test_install_glm_rejects_malformed_key_no_injection(tmp_path):
+    """A non-Z.ai key (e.g. one with a quote) is REJECTED, not rendered.
+
+    Security (Codex): render_glm_script single-quotes the token, but a stored
+    value containing a single quote closes the string and injects shell. The
+    read path must fail-closed on any value outside the strict Z.ai key format
+    rather than generate an executable with the raw value.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths, api_key="good'; touch /tmp/pwned; echo '")
+
+    with pytest.raises(ZaiCodexHelperError, match="not a valid Z.ai key|malformed"):
+        install_glm(paths)
+    # And no script was written.
+    assert not glm_script_path(paths).exists()
+
+
 # --------------------------------------------------------------------------- #
 # is_glm_installed — ownership by a STABLE MARKER (not body/key).
 # A foreign ~/.local/bin/glm (no marker) is NOT ours; ours survives key rotation.

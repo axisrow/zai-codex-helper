@@ -93,9 +93,9 @@ def uninstall_macro(paths: Paths, *, dry_run: bool = False) -> None:
     # 2. Moon Bridge LaunchAgent down + plist removed (idempotent if absent).
     #    Forward dry_run so a preview never really boots out the agent.
     uninstall_service(paths, dry_run=dry_run)
-    # 3. Remove the generated glm wrapper (BEFORE the yml — is_glm_installed
-    #    needs the key from the yml to confirm the script is ours; a foreign
-    #    ~/.local/bin/glm is left intact). Idempotent: no-op if absent/not ours.
+    # 3. Remove the generated glm wrapper (marker-based, so order vs the yml
+    #    no longer matters — uninstall_glm reads only the script). A foreign
+    #    ~/.local/bin/glm is left intact. Idempotent: no-op if absent/not ours.
     from zai_codex_helper.services.glm_script import uninstall_glm
 
     uninstall_glm(paths, dry_run=dry_run)
