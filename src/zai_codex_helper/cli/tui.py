@@ -167,25 +167,6 @@ _ALIASES_SUBMENU: tuple[tuple[str, str | None], ...] = (
 )
 
 
-def _alias_installed(paths, name: str) -> bool:
-    """True iff alias ``name`` is currently installed.
-
-    Strict by exact body: zai iff its canonical ``alias name="cmd"`` line is in
-    the managed fence; glm iff the script at ``~/.local/bin/glm`` exists AND its
-    body matches what the helper generates (a foreign glm is not ours).
-    """
-    from zai_codex_helper.backends.shell import ShellBackend
-    from zai_codex_helper.services.aliases import ALIASES
-    from zai_codex_helper.services.glm_script import is_glm_installed
-
-    if name == "glm":
-        return is_glm_installed(paths)
-    # Fence alias: present iff its canonical ``alias name="cmd"`` line is in the fence.
-    cmd = next((a.command for a in ALIASES if a.name == name), "")
-    body = ShellBackend(paths).get_block() or ""
-    return f'alias {name}="{cmd}"' in body
-
-
 def _aliases_submenu(paths, args: argparse.Namespace) -> None:
     """Arrow-key submenu for the opt-in aliases (zai, glm). Returns to main menu.
 
@@ -200,22 +181,33 @@ def _aliases_submenu(paths, args: argparse.Namespace) -> None:
     active (the main loop holds it for the whole session), so
     :func:`_read_key` works here too.
 
+    Presence is computed once per redraw (a snapshot over both aliases) rather
+    than per row + per footer hint — each check reads the fence / parses the
+    yml, and the loop redraws on every keystroke.
+
     ``ZaiCodexHelperError`` (e.g. ``glm`` without the yml/key) is caught and
     printed — the submenu stays up, mirroring how the main loop handles its
     own action errors.
     """
+    from zai_codex_helper.services.aliases import is_alias_installed
+
     dry = getattr(args, "dry_run", False)
     sel = 0
     while True:
+        # Snapshot each alias's installed-state once per redraw (each check is
+        # a fence read / yml parse — don't repeat per row + per footer hint).
+        installed = {
+            name: is_alias_installed(paths, name)
+            for _, name in _ALIASES_SUBMENU
+            if name is not None
+        }
         print(_CLEAR, end="")
         print("zai-codex-helper   Aliases\n")
         for i, (label, name) in enumerate(_ALIASES_SUBMENU):
             if name is None:
                 rendered = label
             else:
-                state = (
-                    "installed" if _alias_installed(paths, name) else "not installed"
-                )
+                state = "installed" if installed[name] else "not installed"
                 rendered = f"{label}  [{state}]"
             marker = ">" if i == sel else " "
             print(f"  {marker} {rendered}")
@@ -223,7 +215,7 @@ def _aliases_submenu(paths, args: argparse.Namespace) -> None:
         _, sel_name = _ALIASES_SUBMENU[sel]
         if sel_name is None:
             action = "go back"
-        elif _alias_installed(paths, sel_name):
+        elif installed[sel_name]:
             action = "uninstall"
         else:
             action = "install"
@@ -239,7 +231,7 @@ def _aliases_submenu(paths, args: argparse.Namespace) -> None:
             if name is None:
                 return  # Back
             try:
-                if _alias_installed(paths, name):
+                if installed[name]:
                     remove_aliases(paths, names=[name], dry_run=dry)
                 else:
                     apply_aliases(paths, names=[name], dry_run=dry)

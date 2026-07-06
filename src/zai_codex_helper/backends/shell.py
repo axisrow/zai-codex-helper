@@ -243,46 +243,36 @@ class ShellBackend(ConfigBackend):
             return f"{text}\n{fence}"
         return f"{text}{fence}"
 
-    def remove_block(self) -> None:
-        """Delete the fenced section cleanly, leaving the rest of ``.zshrc`` (D-57).
+    def preview_remove(self) -> str:
+        """Return the would-be WHOLE file after removing the fenced section (pure).
 
-        Reads the current text; if both markers are present, removes the fenced
-        section (markers + content) and rewrites the whole file through
-        ``_write_via_atomic(text, 0o644)``. If no markers are present this is a
-        no-op (idempotent remove — calling it on a fence-less file leaves the
-        file unchanged).
-
-        Trailing-newline cleanup: removing a fence can leave a dangling blank
-        line where it was. The cleanup collapses a resulting blank-line gap at
-        the removal point so the file stays tidy, but does NOT touch blank
-        lines elsewhere (those are the user's content and survive verbatim —
-        D-57 lossless guarantee).
+        The pure (no-IO) half of :meth:`remove_block`: the same marker-strip +
+        blank-line collapse, returned instead of written. Callers that need a
+        dry-run preview of a remove (so the diff is apples-to-apples against the
+        current file) call this; :meth:`remove_block` delegates here. Returns
+        the current file text unchanged when no markers are present (a remove
+        on a fence-less file is a no-op).
         """
         text = self.read()
         if MARKER_START not in text or MARKER_END not in text:
-            # No fence → no-op. The file is left exactly as-is (idempotent
-            # remove — Phase 13 may call this defensively even if setup never
-            # ran).
-            return
-
-        # Remove the fenced section + a single trailing newline (so we don't
-        # leave a blank line where the fence was). Then collapse any remaining
-        # double-blank-line that the removal introduced at that point.
+            # No fence → no-op: would-be == current.
+            return text
+        # Strip the fenced section, collapse the blank-line gap the removal can
+        # open at the fence's position, trim a leading blank if the fence was
+        # at the top. Same logic remove_block writes — kept here as the single
+        # source so the dry-run preview and the real write can never drift.
         without_fence = _FENCE_RE.sub("", text, count=1)
-        # Strip the single newline immediately preceding the removed fence's
-        # position: _FENCE_RE.sub leaves the char that was just before the
-        # match (often "\n") plus possibly the char after (often "\n"). Collapse
-        # runs of 3+ newlines down to 2 (one blank line) ONLY where the removal
-        # happened — but to keep this simple and not touch the user's content,
-        # collapse "\n\n\n+" → "\n\n" globally; this only ever affects spots
-        # where a blank line was already adjacent to the fence (a fence the
-        # helper owned), never a single user blank line elsewhere.
         without_fence = re.sub(r"\n{3,}", "\n\n", without_fence)
-        # Trim a leading blank line if the fence was at the top of the file
-        # (the removal can leave the file starting with a blank line).
-        if without_fence.startswith("\n"):
-            without_fence = without_fence[1:]
-        self._write_via_atomic(without_fence, 0o644)
+        return without_fence[1:] if without_fence.startswith("\n") else without_fence
+
+    def remove_block(self) -> None:
+        """Delete the fenced section cleanly, leaving the rest of ``.zshrc`` (D-57).
+
+        Delegates to :meth:`preview_remove` (the pure half) and writes the
+        result through ``_write_via_atomic(text, 0o644)``. No-op when no
+        markers are present (idempotent remove).
+        """
+        self._write_via_atomic(self.preview_remove(), 0o644)
 
     def write_raw(self, content: str, mode: int | None = None) -> None:
         """Atomically write ``content`` as the WHOLE ``.zshrc``, no fence (D-29).

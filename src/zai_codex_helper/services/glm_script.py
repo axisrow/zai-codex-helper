@@ -86,17 +86,20 @@ def _read_api_key(paths: Paths) -> str:
     """Return the Z.ai api_key from the persistent ``moonbridge-zai.yml`` copy.
 
     The yml is the ONLY persistent copy of the key (the helper never echoes it
-    elsewhere). Raises :class:`ZaiCodexHelperError` if the yml or the key is
-    absent — ``glm`` requires Z.ai to be set up first.
+    elsewhere). Reads via :func:`get_api_key` (the yml-vocabulary owner) so the
+    ``providers.<name>.api_key`` shape has one accessor. Raises
+    :class:`ZaiCodexHelperError` if the yml or the key is absent — ``glm``
+    requires Z.ai to be set up first.
     """
+    from zai_codex_helper.services.moonbridge_yml import get_api_key
+
     if not paths.moonbridge_yml.exists():
         raise ZaiCodexHelperError(
-            "moonbridge-zai.yml not found — run `zai-codex-helper install` "
+            "moonbridge-zai.yml not found — run `zai-codex-helper setup` "
             "(set up Z.ai) before installing the glm wrapper"
         )
     try:
-        data = YamlBackend(paths).read() or {}
-        key = data.get("providers", {}).get("zai", {}).get("api_key")
+        key = get_api_key(YamlBackend(paths).read() or {})
     except Exception as e:  # malformed yml — surface a clear message
         raise ZaiCodexHelperError(
             f"cannot read api_key from moonbridge-zai.yml: {e}"

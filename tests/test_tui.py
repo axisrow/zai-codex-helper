@@ -342,7 +342,9 @@ def test_aliases_submenu_shows_not_installed_and_install_hint(
     from zai_codex_helper.services.paths import Paths
 
     paths = Paths.from_home(tmp_path)
-    monkeypatch.setattr(tui, "_alias_installed", lambda p, name: False)
+    monkeypatch.setattr(
+        "zai_codex_helper.services.aliases.is_alias_installed", lambda p, name: False
+    )
     monkeypatch.setattr(tui, "apply_aliases", lambda *a, **k: AliasResult(changed=True))
     monkeypatch.setattr(
         tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False)
@@ -364,7 +366,9 @@ def test_aliases_submenu_shows_installed_and_uninstall_hint(
     from zai_codex_helper.services.paths import Paths
 
     paths = Paths.from_home(tmp_path)
-    monkeypatch.setattr(tui, "_alias_installed", lambda p, name: True)
+    monkeypatch.setattr(
+        "zai_codex_helper.services.aliases.is_alias_installed", lambda p, name: True
+    )
     monkeypatch.setattr(
         tui, "apply_aliases", lambda *a, **k: AliasResult(changed=False)
     )

@@ -15,11 +15,10 @@ so any fence a user already has keeps matching and the setup/zshrc tests pass.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from zai_codex_helper.backends.shell import _FENCE_RE, ShellBackend
+from zai_codex_helper.backends.shell import ShellBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.diff_preview import NO_CHANGES, compute_diff
 from zai_codex_helper.services.paths import Paths
@@ -234,12 +233,17 @@ def apply_aliases(
 
     if fence_names or not name_list:
         # Fence path: explicit names (minus glm) OR the bare-apply default.
+        # Compose the would-be whole file ONCE — compose() reads the current
+        # .zshrc, and the diff + the write both need that same target, so one
+        # read serves both (was 3: compose for merge, compose in _diff_would_be,
+        # compose inside write_canonical).
         requested = _resolve(fence_names or None)
         backend = ShellBackend(paths)
         body = _merge_into_current(backend, requested)
-        changed, diff = _diff_would_be(paths, backend.compose(body))
+        would_be = backend.compose(body)
+        changed, diff = _diff_would_be(paths, would_be)
         if changed and not dry_run:
-            backend.write_canonical(body)
+            backend._write_via_atomic(would_be, 0o644)
         changed_any = changed_any or changed
         if dry_run and diff:
             diff_parts.append(diff)
@@ -355,7 +359,9 @@ def remove_aliases(
     if has_content:
         would_be = backend.compose(kept_body)
     else:
-        would_be = _without_fence(backend.read())
+        would_be = (
+            backend.preview_remove()
+        )  # fence collapses → pure half of remove_block
     changed, diff = _diff_would_be(paths, would_be)
     if changed and not dry_run:
         if has_content:
@@ -365,17 +371,23 @@ def remove_aliases(
     return AliasResult(changed=changed or changed_any, diff=diff if dry_run else "")
 
 
-def _without_fence(text: str) -> str:
-    """Return ``text`` with the marker-fenced section removed (mirrors remove_block).
+def is_alias_installed(paths: Paths, name: str) -> bool:
+    """True iff alias ``name`` is currently installed.
 
-    A pure stand-in for :meth:`ShellBackend.remove_block`'s textual effect, used
-    only to compute the would-be file for a dry-run diff when the fence ends up
-    empty (no body left to compose). Kept in sync with ``remove_block`` by the
-    same ``_FENCE_RE`` substitution + blank-line collapse.
+    Strict by exact body, so uninstall only ever touches what the helper
+    created: a fence alias (zai) is "installed" iff its canonical
+    ``alias name="cmd"`` line is in the managed fence; ``glm`` iff the wrapper
+    script exists AND its bytes match what the helper generates (a foreign
+    ~/.local/bin/glm is not ours). The single predicate for list_aliases, the
+    TUI submenu, and the apply/remove toggles.
     """
-    without = _FENCE_RE.sub("", text, count=1)
-    without = re.sub(r"\n{3,}", "\n\n", without)
-    return without[1:] if without.startswith("\n") else without
+    if name == _GLM_NAME:
+        from zai_codex_helper.services.glm_script import is_glm_installed
+
+        return is_glm_installed(paths)
+    cmd = next((a.command for a in ALIASES if a.name == name), "")
+    body = ShellBackend(paths).get_block() or ""
+    return f'alias {name}="{cmd}"' in body
 
 
 def list_aliases(paths: Paths, *, print_fn=print) -> None:
@@ -383,18 +395,8 @@ def list_aliases(paths: Paths, *, print_fn=print) -> None:
 
     Read-only (no write). ``print_fn`` is injectable for tests.
     """
-    body = ShellBackend(paths).get_block() or ""
     opt_in_names = {a.name for a in OPT_IN_ALIASES}
-    # glm is a generated script, not a fence line — presence is a strict body
-    # match (a foreign ~/.local/bin/glm is NOT the helper's).
-    from zai_codex_helper.services.glm_script import is_glm_installed
-
-    glm_present = is_glm_installed(paths)
     for a in ALIASES:
-        if a.name == _GLM_NAME:
-            present = glm_present
-        else:
-            present = f'alias {a.name}="{a.command}"' in body
-        state = "installed" if present else "not installed"
+        state = "installed" if is_alias_installed(paths, a.name) else "not installed"
         kind = "opt-in" if a.name in opt_in_names else "default"
         print_fn(f"{a.name:18} {state:13} {kind:8} {a.description}")

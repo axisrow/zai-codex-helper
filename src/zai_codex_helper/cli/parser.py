@@ -39,26 +39,15 @@ from zai_codex_helper.services.provider_apply import (  # noqa: E402, F401
 
 def _handle_use_zai(args: argparse.Namespace) -> int:
     """Make Z.ai (``glm-5.2``, ``xhigh``) the Codex default (D-45, PROV-01)."""
-    # Lazy imports (mirrors `_handle_restore`'s discipline so parser.py stays
-    # import-light at module load).
-    from zai_codex_helper.agents import REGISTRY
+    # Lazy imports keep parser.py import-light at module load.
     from zai_codex_helper.services.paths import Paths
     from zai_codex_helper.services.provider_apply import apply_provider
-
-    # Issue #29: route through the Agent/Provider registry instead of calling
-    # the pure transform directly. The agent delegates to apply_zai, so the
-    # on-disk result is byte-identical (pinned by tests/test_agents.py); the
-    # registry is the seam future agents (Kimi, Claude Code) will plug into.
-    codex = REGISTRY.get("codex")
-    zai = REGISTRY.provider("zai")
-
-    def transform(doc):
-        return codex.apply_provider(doc, zai)
+    from zai_codex_helper.services.providers import apply_zai
 
     # Phase 15 (D-95): forward the root --dry-run flag so `use zai --dry-run`
     # previews the would-be config.toml change as a diff and writes nothing.
     result = apply_provider(
-        Paths.default(), transform, dry_run=getattr(args, "dry_run", False)
+        Paths.default(), apply_zai, dry_run=getattr(args, "dry_run", False)
     )
     _render_apply_result(result, sys.stderr)
     return 0
@@ -66,21 +55,14 @@ def _handle_use_zai(args: argparse.Namespace) -> int:
 
 def _handle_use_openai(args: argparse.Namespace) -> int:
     """Revert to OpenAI (``gpt-5.5``) — PROV-02."""
-    from zai_codex_helper.agents import REGISTRY
     from zai_codex_helper.services.paths import Paths
     from zai_codex_helper.services.provider_apply import apply_provider
-
-    # Issue #29: route through the Agent/Provider registry (see _handle_use_zai).
-    codex = REGISTRY.get("codex")
-    openai = REGISTRY.provider("openai")
-
-    def transform(doc):
-        return codex.apply_provider(doc, openai)
+    from zai_codex_helper.services.providers import apply_openai
 
     # Phase 15 (D-95): forward the root --dry-run flag so `use openai --dry-run`
     # previews the would-be config.toml change as a diff and writes nothing.
     result = apply_provider(
-        Paths.default(), transform, dry_run=getattr(args, "dry_run", False)
+        Paths.default(), apply_openai, dry_run=getattr(args, "dry_run", False)
     )
     _render_apply_result(result, sys.stderr)
     return 0
@@ -295,6 +277,15 @@ def _handle_alias_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_alias_result(result, dry_run: bool) -> int:
+    """Shared tail for `alias apply`/`remove`: dry-run diff + no-changes note."""
+    if dry_run and result.diff:
+        print(result.diff)
+    if not result.changed:
+        print("no changes")
+    return 0
+
+
 def _handle_alias_apply(args: argparse.Namespace) -> int:
     """Upsert the managed alias(es) into the ``.zshrc`` fence."""
     from zai_codex_helper.services.aliases import apply_aliases
@@ -304,11 +295,7 @@ def _handle_alias_apply(args: argparse.Namespace) -> int:
     result = apply_aliases(
         Paths.default(), names=getattr(args, "names", None), dry_run=dry_run
     )
-    if dry_run and result.diff:
-        print(result.diff)
-    if not result.changed:
-        print("no changes")
-    return 0
+    return _render_alias_result(result, dry_run)
 
 
 def _handle_alias_remove(args: argparse.Namespace) -> int:
@@ -318,11 +305,7 @@ def _handle_alias_remove(args: argparse.Namespace) -> int:
 
     dry_run = getattr(args, "dry_run", False)
     result = remove_aliases(Paths.default(), names=args.names, dry_run=dry_run)
-    if dry_run and result.diff:
-        print(result.diff)
-    if not result.changed:
-        print("no changes")
-    return 0
+    return _render_alias_result(result, dry_run)
 
 
 def build_parser() -> argparse.ArgumentParser:
