@@ -29,6 +29,7 @@ import termios
 import tty
 
 from zai_codex_helper.errors import ZaiCodexHelperError
+from zai_codex_helper.services.aliases import apply_aliases, remove_aliases
 from zai_codex_helper.services.paths import Paths
 
 #: The fixed menu skeleton (top to bottom). Each entry is (key, kind) where
@@ -39,6 +40,7 @@ _MENU: tuple[tuple[str, str], ...] = (
     ("Install", "macro-install"),
     ("Z.ai", "toggle-zai"),
     ("Set Key", "action-setkey"),
+    ("Aliases", "menu-aliases"),
     ("Doctor", "action-doctor"),
     ("Uninstall", "macro-uninstall"),
     ("Quit", "action-quit"),
@@ -153,6 +155,79 @@ def _is_disabled(kind: str, state: tuple[bool, bool, str]) -> bool:
     return False
 
 
+#: The Aliases submenu items: (label, alias-name). ``None`` alias-name = Back.
+#: zai is a fence alias; glm is a generated script — both flow through the
+#: same apply_aliases/remove_aliases service functions (glm routes internally).
+_ALIASES_SUBMENU: tuple[tuple[str, str | None], ...] = (
+    ("Install zai", "zai"),
+    ("Install glm", "glm"),
+    ("Back", None),
+)
+
+
+def _alias_installed(paths, name: str) -> bool:
+    """True iff alias ``name`` is currently installed (zai in fence; glm = script)."""
+    from zai_codex_helper.backends.shell import ShellBackend
+    from zai_codex_helper.services.aliases import ALIASES
+    from zai_codex_helper.services.glm_script import glm_script_path
+
+    if name == "glm":
+        return glm_script_path(paths).exists()
+    # Fence alias: present iff its canonical ``alias name="cmd"`` line is in the fence.
+    cmd = next((a.command for a in ALIASES if a.name == name), "")
+    body = ShellBackend(paths).get_block() or ""
+    return f'alias {name}="{cmd}"' in body
+
+
+def _aliases_submenu(paths, args: argparse.Namespace) -> None:
+    """Arrow-key submenu for the opt-in aliases (zai, glm). Returns to main menu.
+
+    Three items: Install zai, Install glm, Back. Selecting an alias TOGGLES it
+    — install via :func:`apply_aliases` if absent, remove via
+    :func:`remove_aliases` if present (both route ``glm`` to the script service).
+    Esc / Back returns to the main menu. cbreak is already active (the main
+    loop holds it for the whole session), so :func:`_read_key` works here too.
+
+    ``ZaiCodexHelperError`` (e.g. ``glm`` without the yml/key) is caught and
+    printed — the submenu stays up, mirroring how the main loop handles its
+    own action errors.
+    """
+    dry = getattr(args, "dry_run", False)
+    sel = 0
+    while True:
+        print(_CLEAR, end="")
+        print("zai-codex-helper   Aliases\n")
+        for i, (label, name) in enumerate(_ALIASES_SUBMENU):
+            if name is None:
+                rendered = label
+            else:
+                state = "installed" if _alias_installed(paths, name) else "absent"
+                rendered = f"{label}  [{state}]"
+            marker = ">" if i == sel else " "
+            print(f"  {marker} {rendered}")
+        print("\n  ↑↓ move   Enter toggle / select   Esc back")
+
+        key = _read_key()
+        if key in ("UP", "k"):
+            sel = (sel - 1) % len(_ALIASES_SUBMENU)
+        elif key in ("DOWN", "j"):
+            sel = (sel + 1) % len(_ALIASES_SUBMENU)
+        elif key in ("\r", "\n"):
+            _, name = _ALIASES_SUBMENU[sel]
+            if name is None:
+                return  # Back
+            try:
+                if _alias_installed(paths, name):
+                    remove_aliases(paths, names=[name], dry_run=dry)
+                else:
+                    apply_aliases(paths, names=[name], dry_run=dry)
+            except ZaiCodexHelperError as e:
+                print(f"error: {e}", file=sys.stderr)
+            _pause()
+        elif key in ("ESC", "q"):
+            return
+
+
 def _dispatch(
     kind: str, paths, args: argparse.Namespace, state: tuple[bool, bool, str]
 ) -> bool:
@@ -171,6 +246,9 @@ def _dispatch(
     dry = getattr(args, "dry_run", False)
     if kind == "action-quit":
         return True
+    if kind == "menu-aliases":
+        _aliases_submenu(paths, args)
+        return False
     if kind == "macro-install":
         import os
 
