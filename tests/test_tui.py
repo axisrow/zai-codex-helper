@@ -219,6 +219,33 @@ def test_run_arrow_keys_and_quit(monkeypatch):
 
 
 @pytest.mark.unit
+def test_run_menu_aliases_back_does_not_pause(monkeypatch):
+    """Returning from the Aliases submenu (Back) does NOT trigger 'press any key'.
+
+    The main-loop _pause() after dispatch is for actions that print output
+    (install/uninstall/toggle/set-key/doctor). menu-aliases manages its own
+    pause internally and prints nothing on return, so pausing after it just
+    stalls the UX (the regression: Back showed "press any key").
+    """
+    monkeypatch.setattr(tui.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tui.termios, "tcgetattr", lambda fd: None)
+    monkeypatch.setattr(tui.termios, "tcsetattr", lambda *a, **k: None)
+    monkeypatch.setattr(tui.tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr(tui, "_state", lambda paths: (False, False, "OpenAI"))
+    # _dispatch real for menu-aliases (routes to _aliases_submenu); stub the
+    # submenu to a no-op so we isolate the main-loop pause behavior.
+    monkeypatch.setattr(tui, "_aliases_submenu", lambda paths, args: None)
+    paused = []
+    monkeypatch.setattr(tui, "_pause", lambda: paused.append(True))
+    # DOWN×3 → Aliases (index 3), ENTER (dispatch → submenu no-op → Back),
+    # then "q" to quit the main loop.
+    keys = iter(("DOWN", "DOWN", "DOWN", "\r", "q"))
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    assert tui.run(_ns()) == 0
+    assert paused == []  # Back from Aliases → no pause
+
+
+@pytest.mark.unit
 def test_run_ctrl_c_exits_cleanly(monkeypatch):
     """Ctrl+C (KeyboardInterrupt during _read_key) → exit 0, no traceback.
 

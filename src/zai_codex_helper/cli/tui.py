@@ -378,7 +378,12 @@ def run(args: argparse.Namespace) -> int:
                 # don't, so skip the launchctl+config re-read for them.
                 if kind in ("macro-install", "macro-uninstall", "toggle-zai"):
                     state = _state(paths)
-                _pause()
+                # Pause only for actions that print output the redraw would wipe
+                # (install/uninstall/toggle/set-key/doctor). menu-aliases manages
+                # its own pause internally and prints nothing on return — no
+                # "press any key" stall on Back.
+                if kind != "menu-aliases":
+                    _pause()
             elif key in ("ESC", "q"):
                 return 0
     except KeyboardInterrupt:
