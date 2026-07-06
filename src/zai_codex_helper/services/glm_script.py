@@ -36,6 +36,7 @@ __all__ = [
     "render_glm_script",
     "install_glm",
     "uninstall_glm",
+    "is_glm_installed",
 ]
 
 #: Z.ai's Anthropic-compatible endpoint (matches the author's glm wrapper).
@@ -52,12 +53,13 @@ _GLM_MODE = 0o755
 
 
 def glm_script_path(paths: Paths) -> Path:
-    """Return the generated glm wrapper path (``<codex_dir>/bin/glm``).
+    """Return the generated glm wrapper path (``~/.local/bin/glm``).
 
-    Reuses the Moon Bridge bin dir; no new ``Paths`` field, no ``~/.local/bin``
-    PATH assumption — the user invokes ``~/.codex/bin/glm`` or symlinks it.
+    Under the XDG user-bin dir (typically on ``PATH``), NOT ``~/.codex`` — glm
+    invokes ``claude`` and is unrelated to Codex. ``~/.local/bin`` is created
+    on write by :func:`atomic_write`'s ``parent.mkdir``.
     """
-    return paths.codex_dir / "bin" / "glm"
+    return paths.glm_script
 
 
 def render_glm_script(api_key: str) -> str:
@@ -107,6 +109,31 @@ def _read_api_key(paths: Paths) -> str:
     return key
 
 
+def is_glm_installed(paths: Paths) -> bool:
+    """True iff the helper's glm wrapper is installed (strict body match).
+
+    Not a mere file-existence check: the script at :func:`glm_script_path` must
+    exist AND its bytes must equal :func:`render_glm_script` for the current
+    key. A foreign ``~/.local/bin/glm`` (e.g. the user's hand-written one) with
+    a different body is NOT the helper's and returns False — so uninstall only
+    ever removes what the helper created.
+
+    If the key can't be read (no yml/setup), the canonical body is unknowable,
+    so this safely returns False rather than guessing.
+    """
+    script = glm_script_path(paths)
+    if not script.exists():
+        return False
+    try:
+        body = render_glm_script(_read_api_key(paths))
+    except ZaiCodexHelperError:
+        return False  # no key → can't confirm it's ours
+    try:
+        return script.read_text(encoding="utf-8") == body
+    except OSError:
+        return False
+
+
 def install_glm(paths: Paths, *, dry_run: bool = False) -> bool:
     """Generate the glm wrapper script (0755). Return True iff it wrote.
 
@@ -139,13 +166,17 @@ def install_glm(paths: Paths, *, dry_run: bool = False) -> bool:
 
 
 def uninstall_glm(paths: Paths, *, dry_run: bool = False) -> bool:
-    """Remove the glm wrapper script. Return True iff it was removed.
+    """Remove the helper's glm wrapper script. Return True iff it was removed.
 
-    Idempotent: returns False when the script is already absent.
+    Strict: only removes the script when :func:`is_glm_installed` is True (its
+    body matches what the helper generates). A foreign ``~/.local/bin/glm``
+    with a different body is left intact — the helper never deletes files it
+    did not create. Idempotent: returns False when the script is absent OR not
+    ours.
     """
+    if not is_glm_installed(paths):
+        return False  # absent, or a foreign script we must not touch
     script = glm_script_path(paths)
-    if not script.exists():
-        return False
     if dry_run:
         print(f"would remove {script}")
         return True

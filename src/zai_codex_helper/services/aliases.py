@@ -385,10 +385,11 @@ def list_aliases(paths: Paths, *, print_fn=print) -> None:
     """
     body = ShellBackend(paths).get_block() or ""
     opt_in_names = {a.name for a in OPT_IN_ALIASES}
-    # glm is a generated script, not a fence line — its presence is the file.
-    from zai_codex_helper.services.glm_script import glm_script_path
+    # glm is a generated script, not a fence line — presence is a strict body
+    # match (a foreign ~/.local/bin/glm is NOT the helper's).
+    from zai_codex_helper.services.glm_script import is_glm_installed
 
-    glm_present = glm_script_path(paths).exists()
+    glm_present = is_glm_installed(paths)
     for a in ALIASES:
         if a.name == _GLM_NAME:
             present = glm_present

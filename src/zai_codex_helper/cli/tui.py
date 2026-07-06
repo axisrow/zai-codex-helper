@@ -156,23 +156,30 @@ def _is_disabled(kind: str, state: tuple[bool, bool, str]) -> bool:
 
 
 #: The Aliases submenu items: (label, alias-name). ``None`` alias-name = Back.
-#: zai is a fence alias; glm is a generated script — both flow through the
-#: same apply_aliases/remove_aliases service functions (glm routes internally).
+#: Labels are bare names (no "Install" verb) — the verb lives in the contextual
+#: footer hint (Enter to install / Enter to uninstall). zai is a fence alias;
+#: glm is a generated script — both flow through the same
+#: apply_aliases/remove_aliases service functions (glm routes internally).
 _ALIASES_SUBMENU: tuple[tuple[str, str | None], ...] = (
-    ("Install zai", "zai"),
-    ("Install glm", "glm"),
+    ("zai", "zai"),
+    ("glm", "glm"),
     ("Back", None),
 )
 
 
 def _alias_installed(paths, name: str) -> bool:
-    """True iff alias ``name`` is currently installed (zai in fence; glm = script)."""
+    """True iff alias ``name`` is currently installed.
+
+    Strict by exact body: zai iff its canonical ``alias name="cmd"`` line is in
+    the managed fence; glm iff the script at ``~/.local/bin/glm`` exists AND its
+    body matches what the helper generates (a foreign glm is not ours).
+    """
     from zai_codex_helper.backends.shell import ShellBackend
     from zai_codex_helper.services.aliases import ALIASES
-    from zai_codex_helper.services.glm_script import glm_script_path
+    from zai_codex_helper.services.glm_script import is_glm_installed
 
     if name == "glm":
-        return glm_script_path(paths).exists()
+        return is_glm_installed(paths)
     # Fence alias: present iff its canonical ``alias name="cmd"`` line is in the fence.
     cmd = next((a.command for a in ALIASES if a.name == name), "")
     body = ShellBackend(paths).get_block() or ""
@@ -182,11 +189,16 @@ def _alias_installed(paths, name: str) -> bool:
 def _aliases_submenu(paths, args: argparse.Namespace) -> None:
     """Arrow-key submenu for the opt-in aliases (zai, glm). Returns to main menu.
 
-    Three items: Install zai, Install glm, Back. Selecting an alias TOGGLES it
-    — install via :func:`apply_aliases` if absent, remove via
-    :func:`remove_aliases` if present (both route ``glm`` to the script service).
-    Esc / Back returns to the main menu. cbreak is already active (the main
-    loop holds it for the whole session), so :func:`_read_key` works here too.
+    Three items: zai, glm, Back. Each alias shows live state — ``[installed]``
+    or ``[not installed]`` (strict: glm matches only the helper's exact script
+    body; a foreign ~/.local/bin/glm is "not installed"). The footer hint is
+    contextual on the selected item: ``Enter to install`` when not installed,
+    ``Enter to uninstall`` when installed, ``Enter to go back`` on Back.
+    Selecting an alias TOGGLES it (install via :func:`apply_aliases` if absent,
+    remove via :func:`remove_aliases` if present — both route ``glm`` to the
+    script service). Esc / Back returns to the main menu. cbreak is already
+    active (the main loop holds it for the whole session), so
+    :func:`_read_key` works here too.
 
     ``ZaiCodexHelperError`` (e.g. ``glm`` without the yml/key) is caught and
     printed — the submenu stays up, mirroring how the main loop handles its
@@ -201,11 +213,21 @@ def _aliases_submenu(paths, args: argparse.Namespace) -> None:
             if name is None:
                 rendered = label
             else:
-                state = "installed" if _alias_installed(paths, name) else "absent"
+                state = (
+                    "installed" if _alias_installed(paths, name) else "not installed"
+                )
                 rendered = f"{label}  [{state}]"
             marker = ">" if i == sel else " "
             print(f"  {marker} {rendered}")
-        print("\n  ↑↓ move   Enter toggle / select   Esc back")
+        # Contextual footer hint on the selected row.
+        _, sel_name = _ALIASES_SUBMENU[sel]
+        if sel_name is None:
+            action = "go back"
+        elif _alias_installed(paths, sel_name):
+            action = "uninstall"
+        else:
+            action = "install"
+        print(f"\n  ↑↓ move   Enter to {action}   Esc back")
 
         key = _read_key()
         if key in ("UP", "k"):

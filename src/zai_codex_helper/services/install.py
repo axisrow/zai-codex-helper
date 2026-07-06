@@ -93,13 +93,19 @@ def uninstall_macro(paths: Paths, *, dry_run: bool = False) -> None:
     # 2. Moon Bridge LaunchAgent down + plist removed (idempotent if absent).
     #    Forward dry_run so a preview never really boots out the agent.
     uninstall_service(paths, dry_run=dry_run)
-    # 3. Drop the secrets yml (no longer needed once Moon Bridge is gone).
+    # 3. Remove the generated glm wrapper (BEFORE the yml — is_glm_installed
+    #    needs the key from the yml to confirm the script is ours; a foreign
+    #    ~/.local/bin/glm is left intact). Idempotent: no-op if absent/not ours.
+    from zai_codex_helper.services.glm_script import uninstall_glm
+
+    uninstall_glm(paths, dry_run=dry_run)
+    # 4. Drop the secrets yml (no longer needed once Moon Bridge is gone).
     if dry_run:
         print(f"would remove {paths.moonbridge_yml}")
     else:
         paths.moonbridge_yml.unlink(missing_ok=True)
         print(f"removed {paths.moonbridge_yml}")
-    # 4. Remove the managed alias block from .zshrc (the aliases the install set
+    # 5. Remove the managed alias block from .zshrc (the aliases the install set
     #    up). remove_block is idempotent — a no-op when no fence is present.
     from zai_codex_helper.backends.shell import ShellBackend
 
@@ -107,11 +113,3 @@ def uninstall_macro(paths: Paths, *, dry_run: bool = False) -> None:
         print(f"would remove managed alias block from {paths.zshrc}")
     else:
         ShellBackend(paths).remove_block()
-    # 5. Remove the generated glm wrapper script if present (opt-in; may be absent).
-    from zai_codex_helper.services.glm_script import glm_script_path
-
-    glm = glm_script_path(paths)
-    if dry_run:
-        print(f"would remove {glm}")
-    else:
-        glm.unlink(missing_ok=True)

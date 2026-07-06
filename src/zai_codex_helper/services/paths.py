@@ -46,6 +46,7 @@ class Paths:
     zshrc: Path
     launchagents_dir: Path
     backup_dir: Path
+    glm_script: Path
 
     @classmethod
     def from_home(cls, home: str | Path) -> Paths:
@@ -69,6 +70,9 @@ class Paths:
         - ``zshrc``              = ``home / ".zshrc"``
         - ``launchagents_dir``   = ``home / "Library" / "LaunchAgents"``
         - ``backup_dir``         = ``home / ".codex" / ".zai-codex-helper" / "backups"``
+        - ``glm_script``         = ``home / ".local" / "bin" / "glm"`` (the generated
+          Claude Code→Z.ai wrapper — under the XDG user-bin dir, NOT ``~/.codex``;
+          glm invokes ``claude`` and is unrelated to Codex).
         """
         h = Path(home)
         codex_dir = h / ".codex"
@@ -81,6 +85,7 @@ class Paths:
             zshrc=h / ".zshrc",
             launchagents_dir=h / "Library" / "LaunchAgents",
             backup_dir=codex_dir / ".zai-codex-helper" / "backups",
+            glm_script=h / ".local" / "bin" / "glm",
         )
 
     @classmethod

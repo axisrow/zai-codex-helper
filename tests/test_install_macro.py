@@ -254,8 +254,11 @@ def test_parser_reexports_both_render_helpers():
 
 
 def _seed_fence_and_glm(paths: Paths) -> None:
-    """Seed a .zshrc with user content + the managed fence, and a fake glm script."""
+    """Seed a .zshrc with user content + the managed fence, and the helper's glm script."""
+    import yaml
+
     from zai_codex_helper.backends.shell import ShellBackend
+    from zai_codex_helper.services.glm_script import glm_script_path, install_glm
 
     paths.zshrc.parent.mkdir(parents=True, exist_ok=True)
     paths.zshrc.write_text("alias ll='ls -la'\n", encoding="utf-8")
@@ -263,10 +266,24 @@ def _seed_fence_and_glm(paths: Paths) -> None:
         "# zai-codex-helper shell helpers — managed block (do not edit by hand)\n"
         'alias codex-zai="zai-codex-helper use zai"'
     )
-    # A fake glm wrapper at the canonical path.
-    glm = paths.codex_dir / "bin" / "glm"
-    glm.parent.mkdir(parents=True, exist_ok=True)
-    glm.write_text("#!/bin/bash\necho fake\n", encoding="utf-8")
+    # Seed the yml with a key + install the REAL glm wrapper (so its body matches
+    # what uninstall_glm's strict is_glm_installed check expects — a foreign body
+    # would be left intact).
+    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
+    paths.moonbridge_yml.write_text(
+        yaml.safe_dump(
+            {
+                "providers": {
+                    "zai": {
+                        "api_key": "00000000000000000000000000000000.aaaaaaaaaaaaaaaa"
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    install_glm(paths)
+    assert glm_script_path(paths).exists()
 
 
 def _stub_uninstall_monkeypatchables(monkeypatch):
@@ -293,8 +310,6 @@ def test_uninstall_macro_removes_alias_fence_and_glm_script(tmp_path, monkeypatc
     paths = Paths.from_home(tmp_path)
     _seed_fence_and_glm(paths)
     _stub_uninstall_monkeypatchables(monkeypatch)
-    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
-    paths.moonbridge_yml.write_text("providers: {}\n")
 
     install.uninstall_macro(paths)
 
@@ -305,7 +320,7 @@ def test_uninstall_macro_removes_alias_fence_and_glm_script(tmp_path, monkeypatc
     # …but the user's own .zshrc content survives.
     assert "alias ll='ls -la'" in after
     # The glm wrapper script is removed.
-    assert not (paths.codex_dir / "bin" / "glm").exists()
+    assert not paths.glm_script.exists()
 
 
 @pytest.mark.unit
@@ -314,15 +329,13 @@ def test_uninstall_macro_dry_run_keeps_fence_and_glm(tmp_path, monkeypatch, caps
     paths = Paths.from_home(tmp_path)
     _seed_fence_and_glm(paths)
     _stub_uninstall_monkeypatchables(monkeypatch)
-    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
-    paths.moonbridge_yml.write_text("providers: {}\n")
 
     install.uninstall_macro(paths, dry_run=True)
 
     after = paths.zshrc.read_text(encoding="utf-8")
     # Fence + glm survive a dry-run.
     assert "zai-codex-helper >>>" in after
-    assert (paths.codex_dir / "bin" / "glm").exists()
+    assert paths.glm_script.exists()
     out = capsys.readouterr().out
     assert "would remove" in out  # preview mentions the would-be removals
 

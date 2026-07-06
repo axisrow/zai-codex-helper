@@ -332,3 +332,49 @@ def test_aliases_submenu_glm_error_does_not_crash(monkeypatch, tmp_path, capsys)
     monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
     tui._aliases_submenu(paths, _ns())  # must not raise
     assert "error:" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_aliases_submenu_shows_not_installed_and_install_hint(
+    monkeypatch, tmp_path, capsys
+):
+    """Absent alias renders '[not installed]' and the footer says 'Enter to install'."""
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setattr(tui, "_alias_installed", lambda p, name: False)
+    monkeypatch.setattr(tui, "apply_aliases", lambda *a, **k: AliasResult(changed=True))
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    keys = iter(("\r", "ESC"))  # ENTER on zai (absent) → install, then leave
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())
+    out = capsys.readouterr().out
+    assert "[not installed]" in out
+    assert "Enter to install" in out
+
+
+@pytest.mark.unit
+def test_aliases_submenu_shows_installed_and_uninstall_hint(
+    monkeypatch, tmp_path, capsys
+):
+    """Installed alias renders '[installed]' and the footer says 'Enter to uninstall'."""
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setattr(tui, "_alias_installed", lambda p, name: True)
+    monkeypatch.setattr(
+        tui, "apply_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=True)
+    )
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    keys = iter(("\r", "ESC"))  # ENTER on zai (installed) → uninstall, then leave
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())
+    out = capsys.readouterr().out
+    assert "[installed]" in out
+    assert "Enter to uninstall" in out

@@ -18,6 +18,7 @@ from zai_codex_helper.errors import ZaiCodexHelperError
 from zai_codex_helper.services.glm_script import (
     glm_script_path,
     install_glm,
+    is_glm_installed,
     render_glm_script,
     uninstall_glm,
 )
@@ -68,9 +69,10 @@ def test_render_glm_script_is_executable_shebang():
 
 
 @pytest.mark.unit
-def test_glm_script_path_under_codex_bin(tmp_path):
+def test_glm_script_path_under_local_bin(tmp_path):
+    """glm lives under ~/.local/bin (XDG user bin), NOT ~/.codex/bin."""
     paths = Paths.from_home(tmp_path)
-    assert glm_script_path(paths) == paths.codex_dir / "bin" / "glm"
+    assert glm_script_path(paths) == tmp_path / ".local" / "bin" / "glm"
 
 
 # --------------------------------------------------------------------------- #
@@ -129,6 +131,51 @@ def test_install_glm_raises_without_yml_key(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# is_glm_installed — strict detection by EXACT script body (not file existence).
+# A foreign ~/.local/bin/glm with a different body is NOT the helper's.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.integration
+def test_is_glm_installed_true_when_body_matches(tmp_path):
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths)
+    install_glm(paths)
+
+    assert is_glm_installed(paths) is True
+
+
+@pytest.mark.integration
+def test_is_glm_installed_false_when_absent(tmp_path):
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths)
+    # No script written.
+
+    assert is_glm_installed(paths) is False
+
+
+@pytest.mark.integration
+def test_is_glm_installed_false_for_foreign_script(tmp_path):
+    """A foreign glm (different body, e.g. the user's hand-written one) is NOT ours."""
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths)
+    script = glm_script_path(paths)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(
+        "#!/bin/bash\necho this is someone else's glm\n", encoding="utf-8"
+    )
+
+    assert is_glm_installed(paths) is False
+
+
+@pytest.mark.integration
+def test_is_glm_installed_false_when_no_key(tmp_path):
+    """No yml/key → can't build the canonical body → safely report not-ours."""
+    paths = Paths.from_home(tmp_path)
+    assert is_glm_installed(paths) is False
+
+
+# --------------------------------------------------------------------------- #
 # uninstall_glm — removes the script, idempotent.
 # --------------------------------------------------------------------------- #
 
@@ -152,6 +199,26 @@ def test_uninstall_glm_idempotent_when_absent(tmp_path):
     removed = uninstall_glm(paths)
 
     assert removed is False
+
+
+@pytest.mark.integration
+def test_uninstall_glm_does_not_touch_foreign_script(tmp_path):
+    """A foreign ~/.local/bin/glm (different body) is left intact on uninstall.
+
+    The helper only removes what it created (strict body match). A user's
+    hand-written glm at the same path must survive `alias remove glm`.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths)
+    foreign_body = "#!/bin/bash\necho my own glm\n"
+    script = glm_script_path(paths)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(foreign_body, encoding="utf-8")
+
+    removed = uninstall_glm(paths)
+
+    assert removed is False  # not ours → nothing done
+    assert script.read_text(encoding="utf-8") == foreign_body  # untouched
 
 
 # --------------------------------------------------------------------------- #
