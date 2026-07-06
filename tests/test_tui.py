@@ -352,7 +352,9 @@ def test_aliases_submenu_successful_toggle_skips_pause(monkeypatch, tmp_path):
         "apply_aliases",
         lambda *a, **k: AliasResult(changed=True),
     )
-    monkeypatch.setattr(tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False))
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
     paused = []
     monkeypatch.setattr(tui, "_pause", lambda: paused.append(True))
     keys = iter(("\r", "ESC"))  # ENTER on zai (absent → install), then leave

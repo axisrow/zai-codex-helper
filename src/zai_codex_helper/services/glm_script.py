@@ -48,8 +48,18 @@ GLM_HAIKU_MODEL = "glm-4.7"
 GLM_SONNET_MODEL = "glm-5-turbo"
 GLM_OPUS_MODEL = "glm-5.2[1m]"
 
-#: The script is executable (the Moon Bridge binary precedent: 0o755).
-_GLM_MODE = 0o755
+#: Owner-only executable. The wrapper carries ANTHROPIC_AUTH_TOKEN in plain
+#: text, so group/other must have NO bits (CLAUDE.md keeps secrets at 0600;
+#: 0700 = owner rwx, nobody else reads the token). NOT 0o755 — that made the
+#: key world-readable.
+_GLM_MODE = 0o700
+
+#: A stable marker comment embedded in the script body. Ownership is proven
+#: by this marker, NOT by a body/key match — so detection survives a key
+#: rotation (set-key changes the token in the script; the marker is constant)
+#: and works without the yml (the marker is self-identifying). A foreign
+#: ~/.local/bin/glm lacks it → not ours → never touched.
+_GLM_MARKER = "# zai-codex-helper managed (do not edit)"
 
 
 def glm_script_path(paths: Paths) -> Path:
@@ -65,18 +75,22 @@ def glm_script_path(paths: Paths) -> Path:
 def render_glm_script(api_key: str) -> str:
     """Return the bash wrapper body for ``api_key`` (pure, no IO).
 
-    Verbatim shape of the author's ``~/.local/bin/glm``: a subshell that
-    exports the endpoint + token + the three tier-model envs, then execs
-    ``claude "$@"``. The token is the only parameter; the rest are constants.
+    Shape of the author's ``~/.local/bin/glm``: a subshell that exports the
+    endpoint + token + the three tier-model envs, then execs ``claude "$@"``.
+    The token is single-quoted (defense-in-depth against shell metacharacters
+    if a foreign yml value ever reaches the read path) and the
+    :data:`_GLM_MARKER` comment makes the script self-identifying so ownership
+    survives a key rotation.
     """
     return (
         "#!/bin/bash\n"
+        f"{_GLM_MARKER}\n"
         "(\n"
-        f"export ANTHROPIC_BASE_URL={GLM_ENDPOINT}\n"
-        f"export ANTHROPIC_AUTH_TOKEN={api_key}\n"
-        f"export ANTHROPIC_DEFAULT_HAIKU_MODEL={GLM_HAIKU_MODEL}\n"
-        f"export ANTHROPIC_DEFAULT_SONNET_MODEL={GLM_SONNET_MODEL}\n"
-        f"export ANTHROPIC_DEFAULT_OPUS_MODEL={GLM_OPUS_MODEL}\n"
+        f"export ANTHROPIC_BASE_URL='{GLM_ENDPOINT}'\n"
+        f"export ANTHROPIC_AUTH_TOKEN='{api_key}'\n"
+        f"export ANTHROPIC_DEFAULT_HAIKU_MODEL='{GLM_HAIKU_MODEL}'\n"
+        f"export ANTHROPIC_DEFAULT_SONNET_MODEL='{GLM_SONNET_MODEL}'\n"
+        f"export ANTHROPIC_DEFAULT_OPUS_MODEL='{GLM_OPUS_MODEL}'\n"
         'claude "$@"\n'
         ")\n"
     )
@@ -112,54 +126,54 @@ def _read_api_key(paths: Paths) -> str:
     return key
 
 
-def is_glm_installed(paths: Paths) -> bool:
-    """True iff the helper's glm wrapper is installed (strict body match).
+def _is_ours(script) -> bool:
+    """True iff ``script`` exists and carries the helper marker (any body).
 
-    Not a mere file-existence check: the script at :func:`glm_script_path` must
-    exist AND its bytes must equal :func:`render_glm_script` for the current
-    key. A foreign ``~/.local/bin/glm`` (e.g. the user's hand-written one) with
-    a different body is NOT the helper's and returns False — so uninstall only
-    ever removes what the helper created.
-
-    If the key can't be read (no yml/setup), the canonical body is unknowable,
-    so this safely returns False rather than guessing.
+    Marker-based, so it survives a key rotation (the token changes, the marker
+    doesn't) and works without the yml (the marker is in the script itself).
     """
-    script = glm_script_path(paths)
     if not script.exists():
         return False
     try:
-        body = render_glm_script(_read_api_key(paths))
-    except ZaiCodexHelperError:
-        return False  # no key → can't confirm it's ours
-    try:
-        return script.read_text(encoding="utf-8") == body
+        return _GLM_MARKER in script.read_text(encoding="utf-8")
     except OSError:
         return False
 
 
+def is_glm_installed(paths: Paths) -> bool:
+    """True iff the helper's glm wrapper is installed (by marker, not body).
+
+    A foreign ``~/.local/bin/glm`` without the marker is NOT ours. Ours is
+    recognized even after a key rotation (``set-key`` changed the token in the
+    script) or without the yml (``uninstall_macro`` deletes the yml) — the
+    marker is stable and self-identifying.
+    """
+    return _is_ours(glm_script_path(paths))
+
+
 def install_glm(paths: Paths, *, dry_run: bool = False) -> bool:
-    """Generate the glm wrapper script (0755). Return True iff it wrote.
+    """Generate the glm wrapper script (0700). Return True iff it wrote.
 
-    Resolves the key from ``moonbridge-zai.yml`` (:func:`_read_api_key`), renders
-    the body, and writes it atomically at :func:`glm_script_path` with mode
-    0o755 (the executable-script precedent). Idempotent: a re-install that would
-    produce a byte-identical file is a no-op (returns False).
-
-    Args:
-        paths: Resolved :class:`Paths`.
-        dry_run: When True, print the would-be path and write nothing.
-
-    Returns:
-        True if a write would happen (or would, under dry_run); False if the
-        script is already present and identical.
+    Refuses to clobber a FOREIGN ``~/.local/bin/glm`` (one without the helper
+    marker) — raises :class:`ZaiCodexHelperError` rather than destroying a
+    user's hand-written wrapper. A helper-owned script (marker present) is
+    updated in place (so a re-install after ``set-key`` refreshes the token).
+    Idempotent: a byte-identical re-install is a no-op (returns False).
 
     Raises:
-        ZaiCodexHelperError: if the yml/key is missing (glm requires Z.ai set up).
+        ZaiCodexHelperError: yml/key missing, OR a foreign file is in the way.
     """
     body = render_glm_script(_read_api_key(paths))
     script = glm_script_path(paths)
-    if script.exists() and script.read_text(encoding="utf-8") == body:
-        return False  # idempotent: identical script already installed
+    if script.exists():
+        existing = script.read_text(encoding="utf-8")
+        if existing == body:
+            return False  # idempotent: identical script already installed
+        if _GLM_MARKER not in existing:
+            raise ZaiCodexHelperError(
+                f"{script} exists and is not helper-managed (no marker) — "
+                "refusing to overwrite; remove or rename it first"
+            )
     if dry_run:
         print(f"would write {script}")
         return True
@@ -171,15 +185,15 @@ def install_glm(paths: Paths, *, dry_run: bool = False) -> bool:
 def uninstall_glm(paths: Paths, *, dry_run: bool = False) -> bool:
     """Remove the helper's glm wrapper script. Return True iff it was removed.
 
-    Strict: only removes the script when :func:`is_glm_installed` is True (its
-    body matches what the helper generates). A foreign ``~/.local/bin/glm``
-    with a different body is left intact — the helper never deletes files it
-    did not create. Idempotent: returns False when the script is absent OR not
-    ours.
+    Marker-based: removes the script only when :func:`is_glm_installed` is True
+    (it carries the marker). A foreign ``~/.local/bin/glm`` (no marker) is left
+    intact — the helper never deletes files it did not create. Works even after
+    a key rotation or without the yml. Idempotent: returns False when the
+    script is absent or not ours.
     """
-    if not is_glm_installed(paths):
-        return False  # absent, or a foreign script we must not touch
     script = glm_script_path(paths)
+    if not _is_ours(script):
+        return False
     if dry_run:
         print(f"would remove {script}")
         return True

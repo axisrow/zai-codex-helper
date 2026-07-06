@@ -42,16 +42,28 @@ def _seed_yml(paths: Paths, api_key: str = _KEY) -> None:
 
 
 @pytest.mark.unit
-def test_render_glm_script_embeds_key():
+def test_render_glm_script_embeds_key_single_quoted():
+    """The token is single-quoted — defense-in-depth against shell metacharacters.
+
+    The write path validates the key (``<32-hex>.<16-alnum>``), but the read
+    path (_read_api_key) does not — a foreign yml value flows unvalidated into
+    an executable. Single-quoting closes that gap (Z.ai keys never contain `'`).
+    """
     body = render_glm_script(_KEY)
-    assert f"ANTHROPIC_AUTH_TOKEN={_KEY}" in body
+    assert f"ANTHROPIC_AUTH_TOKEN='{_KEY}'" in body
     assert "#!/bin/bash" in body
+
+
+@pytest.mark.unit
+def test_render_glm_script_has_marker_comment():
+    """The script carries a stable marker (independent of the key) for ownership."""
+    assert "zai-codex-helper managed" in render_glm_script(_KEY)
 
 
 @pytest.mark.unit
 def test_render_glm_script_has_endpoint_and_tier_models():
     body = render_glm_script(_KEY)
-    assert "ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic" in body
+    assert "ANTHROPIC_BASE_URL='https://api.z.ai/api/anthropic'" in body
     assert "ANTHROPIC_DEFAULT_HAIKU_MODEL=" in body
     assert "ANTHROPIC_DEFAULT_SONNET_MODEL=" in body
     assert "ANTHROPIC_DEFAULT_OPUS_MODEL=" in body
@@ -93,7 +105,7 @@ def test_install_glm_writes_executable_script(tmp_path):
     mode = stat.S_IMODE(script.stat().st_mode)
     assert mode & stat.S_IXUSR, f"glm script not executable: {oct(mode)}"
     body = script.read_text(encoding="utf-8")
-    assert f"ANTHROPIC_AUTH_TOKEN={_KEY}" in body
+    assert f"ANTHROPIC_AUTH_TOKEN='{_KEY}'" in body
 
 
 @pytest.mark.integration
@@ -131,13 +143,13 @@ def test_install_glm_raises_without_yml_key(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# is_glm_installed — strict detection by EXACT script body (not file existence).
-# A foreign ~/.local/bin/glm with a different body is NOT the helper's.
+# is_glm_installed — ownership by a STABLE MARKER (not body/key).
+# A foreign ~/.local/bin/glm (no marker) is NOT ours; ours survives key rotation.
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.integration
-def test_is_glm_installed_true_when_body_matches(tmp_path):
+def test_is_glm_installed_true_after_install(tmp_path):
     paths = Paths.from_home(tmp_path)
     _seed_yml(paths)
     install_glm(paths)
@@ -156,7 +168,7 @@ def test_is_glm_installed_false_when_absent(tmp_path):
 
 @pytest.mark.integration
 def test_is_glm_installed_false_for_foreign_script(tmp_path):
-    """A foreign glm (different body, e.g. the user's hand-written one) is NOT ours."""
+    """A foreign glm (no helper marker) is NOT ours — even with a key present."""
     paths = Paths.from_home(tmp_path)
     _seed_yml(paths)
     script = glm_script_path(paths)
@@ -169,14 +181,99 @@ def test_is_glm_installed_false_for_foreign_script(tmp_path):
 
 
 @pytest.mark.integration
-def test_is_glm_installed_false_when_no_key(tmp_path):
-    """No yml/key → can't build the canonical body → safely report not-ours."""
+def test_is_glm_installed_survives_key_rotation(tmp_path):
+    """Ours-after-key-rotation: the marker (not the key) proves ownership.
+
+    Regression (Codex): strict body-match made is_glm_installed return False
+    after set-key rotated the token (script held the old key) — uninstall then
+    no-op'd and a stale-token script survived. Marker-based ownership is
+    independent of the token, so rotation doesn't strand the script.
+    """
     paths = Paths.from_home(tmp_path)
-    assert is_glm_installed(paths) is False
+    _seed_yml(paths, "00000000000000000000000000000000.aaaaaaaaaaaaaaaa")
+    install_glm(paths)
+    # Rotate the key in the yml — the installed script still holds the OLD key.
+    _seed_yml(paths, "11111111111111111111111111111111.bbbbbbbbbbbbbbbb")
+
+    assert is_glm_installed(paths) is True  # marker proves ours
+
+
+@pytest.mark.integration
+def test_is_glm_installed_true_even_without_yml_key(tmp_path):
+    """The marker is in the script, not the yml — detection works without a key.
+
+    uninstall_macro deletes the yml AFTER glm; is_glm_installed must still
+    recognize the script (so a later cleanup can remove it). The marker is
+    self-identifying.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths)
+    install_glm(paths)
+    paths.moonbridge_yml.unlink()  # yml gone (e.g. post-uninstall)
+
+    assert is_glm_installed(paths) is True  # marker still proves ours
 
 
 # --------------------------------------------------------------------------- #
-# uninstall_glm — removes the script, idempotent.
+# install_glm — refuses to clobber a FOREIGN script; updates ours (incl. key).
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.integration
+def test_install_glm_refuses_foreign_script(tmp_path):
+    """A foreign ~/.local/bin/glm is NOT overwritten — raise, don't clobber.
+
+    Regression (Codex): install_glm atomically replaced any non-matching file,
+    destroying a user's hand-written glm. Now it refuses unless the file is
+    absent or already helper-owned (has the marker).
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths)
+    foreign = "#!/bin/bash\necho my own glm\n"
+    script = glm_script_path(paths)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(foreign, encoding="utf-8")
+
+    with pytest.raises(ZaiCodexHelperError, match="refuse|foreign|overwrite"):
+        install_glm(paths)
+    # The foreign file is untouched.
+    assert script.read_text(encoding="utf-8") == foreign
+
+
+@pytest.mark.integration
+def test_install_glm_updates_ours_after_key_rotation(tmp_path):
+    """Re-installing after set-key rewrites the script with the new key."""
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths, "00000000000000000000000000000000.aaaaaaaaaaaaaaaa")
+    install_glm(paths)
+    _seed_yml(paths, "11111111111111111111111111111111.bbbbbbbbbbbbbbbb")
+
+    wrote = install_glm(paths)  # ours (marker) → update, not refuse
+
+    assert wrote is True
+    body = glm_script_path(paths).read_text(encoding="utf-8")
+    assert "11111111111111111111111111111111.bbbbbbbbbbbbbbbb" in body
+
+
+@pytest.mark.integration
+def test_install_glm_writes_owner_only_mode(tmp_path):
+    """The wrapper carries the API key — must be owner-only (0700), not 0755.
+
+    Security (Codex): 0755 made ANTHROPIC_AUTH_TOKEN readable by group/other.
+    CLAUDE.md keeps secrets at 0600; the wrapper is owner-rwx only.
+    """
+    paths = Paths.from_home(tmp_path)
+    _seed_yml(paths)
+    install_glm(paths)
+
+    mode = stat.S_IMODE(glm_script_path(paths).stat().st_mode)
+    assert mode & stat.S_IXUSR, "owner must be able to execute"
+    assert not (mode & (stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP)), "no group bits"
+    assert not (mode & (stat.S_IROTH | stat.S_IWOTH | stat.S_IXOTH)), "no other bits"
+
+
+# --------------------------------------------------------------------------- #
+# uninstall_glm — removes the script by marker; idempotent; foreign untouched.
 # --------------------------------------------------------------------------- #
 
 
@@ -203,11 +300,7 @@ def test_uninstall_glm_idempotent_when_absent(tmp_path):
 
 @pytest.mark.integration
 def test_uninstall_glm_does_not_touch_foreign_script(tmp_path):
-    """A foreign ~/.local/bin/glm (different body) is left intact on uninstall.
-
-    The helper only removes what it created (strict body match). A user's
-    hand-written glm at the same path must survive `alias remove glm`.
-    """
+    """A foreign ~/.local/bin/glm (no marker) is left intact on uninstall."""
     paths = Paths.from_home(tmp_path)
     _seed_yml(paths)
     foreign_body = "#!/bin/bash\necho my own glm\n"
