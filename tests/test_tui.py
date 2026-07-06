@@ -310,6 +310,31 @@ def test_aliases_submenu_install_zai_toggles_on(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
+def test_aliases_submenu_successful_toggle_skips_pause(monkeypatch, tmp_path):
+    """A successful alias toggle does NOT pause (no output to read) — redraws at once.
+
+    `_pause` exists for actions that print output the redraw would wipe (Doctor,
+    install/uninstall progress). An alias toggle prints nothing on success, so
+    pausing just stalls the UX. The pause is kept only for the error path.
+    """
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setattr(
+        tui,
+        "apply_aliases",
+        lambda *a, **k: AliasResult(changed=True),
+    )
+    monkeypatch.setattr(tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False))
+    paused = []
+    monkeypatch.setattr(tui, "_pause", lambda: paused.append(True))
+    keys = iter(("\r", "ESC"))  # ENTER on zai (absent → install), then leave
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())
+    assert paused == []  # successful toggle → no pause
+
+
+@pytest.mark.unit
 def test_aliases_submenu_install_glm_toggles_on(monkeypatch, tmp_path):
     """Selecting 'Install glm' routes to apply_aliases(names=['glm']) (→ install_glm)."""
     from zai_codex_helper.services.paths import Paths

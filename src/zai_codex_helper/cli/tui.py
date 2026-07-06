@@ -236,8 +236,11 @@ def _aliases_submenu(paths, args: argparse.Namespace) -> None:
                 else:
                     apply_aliases(paths, names=[name], dry_run=dry)
             except ZaiCodexHelperError as e:
+                # Pause only on the error path — the redraw _CLEAR would wipe
+                # the message. A successful toggle prints nothing, so it
+                # redraws at once (no "press any key" stall).
                 print(f"error: {e}", file=sys.stderr)
-            _pause()
+                _pause()
         elif key in ("ESC", "q"):
             return
 
