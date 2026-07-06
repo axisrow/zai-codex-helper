@@ -170,6 +170,30 @@ def test_shell_remove_block_idempotent_no_fence(tmp_path):
 
 
 @pytest.mark.unit
+def test_shell_remove_block_no_fence_preserves_mode(tmp_path):
+    """No-fence remove is a TRUE no-op: mode (and bytes) unchanged.
+
+    Regression (Codex cycle-3): the preview_remove refactor dropped the
+    no-marker early-return, so a no-fence remove_block rewrote the file at
+    0o644 — widening a private 0600 .zshrc to world-readable (and replacing a
+    symlink with a regular file). The no-op must not touch the file at all.
+    """
+    import os
+    import stat
+
+    backend = ShellBackend(Paths.from_home(tmp_path))
+    zshrc = tmp_path / ".zshrc"
+    zshrc.write_text("alias ll='ls -la'\n", encoding="utf-8")
+    os.chmod(zshrc, 0o600)
+
+    backend.remove_block()
+
+    mode = stat.S_IMODE(zshrc.stat().st_mode)
+    assert mode == 0o600  # NOT widened to 0o644
+    assert zshrc.read_text(encoding="utf-8") == "alias ll='ls -la'\n"
+
+
+@pytest.mark.unit
 def test_shell_write_into_nonexistent_zshrc(tmp_path):
     """Fresh user: file absent → write_canonical creates it with just the fence."""
     backend = ShellBackend(Paths.from_home(tmp_path))

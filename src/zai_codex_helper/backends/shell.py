@@ -269,9 +269,15 @@ class ShellBackend(ConfigBackend):
         """Delete the fenced section cleanly, leaving the rest of ``.zshrc`` (D-57).
 
         Delegates to :meth:`preview_remove` (the pure half) and writes the
-        result through ``_write_via_atomic(text, 0o644)``. No-op when no
-        markers are present (idempotent remove).
+        result through ``_write_via_atomic(text, 0o644)``. **True no-op when no
+        markers are present** (idempotent remove) — returns WITHOUT writing, so
+        a fence-less file's mode / symlink / bytes are untouched (the
+        preview_remove refactor had dropped this early-return and rewrote the
+        file at 0o644, widening a private 0600 .zshrc — Codex cycle-3).
         """
+        text = self.read()
+        if MARKER_START not in text or MARKER_END not in text:
+            return  # no fence → no write (preserve mode/symlink/bytes)
         self._write_via_atomic(self.preview_remove(), 0o644)
 
     def write_raw(self, content: str, mode: int | None = None) -> None:
