@@ -246,3 +246,110 @@ def test_parser_reexports_both_render_helpers():
 
     assert _emit_restart_warning is render_restart_warning
     assert _render_apply_result is render_apply_result
+
+
+# --------------------------------------------------------------------------- #
+# uninstall_macro removes the managed alias fence + the glm wrapper script.
+# --------------------------------------------------------------------------- #
+
+
+def _seed_fence_and_glm(paths: Paths) -> None:
+    """Seed a .zshrc with user content + the managed fence, and the helper's glm script."""
+    import yaml
+
+    from zai_codex_helper.backends.shell import ShellBackend
+    from zai_codex_helper.services.glm_script import glm_script_path, install_glm
+
+    paths.zshrc.parent.mkdir(parents=True, exist_ok=True)
+    paths.zshrc.write_text("alias ll='ls -la'\n", encoding="utf-8")
+    ShellBackend(paths).write_canonical(
+        "# zai-codex-helper shell helpers — managed block (do not edit by hand)\n"
+        'alias codex-zai="zai-codex-helper use zai"'
+    )
+    # Seed the yml with a key + install the REAL glm wrapper (so its body matches
+    # what uninstall_glm's strict is_glm_installed check expects — a foreign body
+    # would be left intact).
+    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
+    paths.moonbridge_yml.write_text(
+        yaml.safe_dump(
+            {
+                "providers": {
+                    "zai": {
+                        "api_key": "00000000000000000000000000000000.aaaaaaaaaaaaaaaa"
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    install_glm(paths)
+    assert glm_script_path(paths).exists()
+
+
+def _stub_uninstall_monkeypatchables(monkeypatch):
+    """Stub the destructive service calls so uninstall_macro runs hermetically."""
+    monkeypatch.setattr(
+        "zai_codex_helper.services.lifecycle.uninstall_service",
+        lambda p, *, dry_run=False, **_kw: 0,
+    )
+    from zai_codex_helper.services.provider_apply import ProviderApplyResult
+
+    monkeypatch.setattr(
+        "zai_codex_helper.services.provider_apply.apply_provider",
+        lambda p, transform, *, dry_run=False: ProviderApplyResult(
+            config_changed=False,
+            dry_run_diff="(no changes)",
+            desktop_restart_required=False,
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_uninstall_macro_removes_alias_fence_and_glm_script(tmp_path, monkeypatch):
+    """uninstall_macro removes the managed fence + glm script; user content survives."""
+    paths = Paths.from_home(tmp_path)
+    _seed_fence_and_glm(paths)
+    _stub_uninstall_monkeypatchables(monkeypatch)
+
+    install.uninstall_macro(paths)
+
+    after = paths.zshrc.read_text(encoding="utf-8")
+    # The managed fence (markers + body) is gone…
+    assert "zai-codex-helper >>>" not in after
+    assert "codex-zai" not in after
+    # …but the user's own .zshrc content survives.
+    assert "alias ll='ls -la'" in after
+    # The glm wrapper script is removed.
+    assert not paths.glm_script.exists()
+
+
+@pytest.mark.unit
+def test_uninstall_macro_dry_run_keeps_fence_and_glm(tmp_path, monkeypatch, capsys):
+    """dry_run=True: the fence + glm script are NOT touched (preview only)."""
+    paths = Paths.from_home(tmp_path)
+    _seed_fence_and_glm(paths)
+    _stub_uninstall_monkeypatchables(monkeypatch)
+
+    install.uninstall_macro(paths, dry_run=True)
+
+    after = paths.zshrc.read_text(encoding="utf-8")
+    # Fence + glm survive a dry-run.
+    assert "zai-codex-helper >>>" in after
+    assert paths.glm_script.exists()
+    out = capsys.readouterr().out
+    assert "would remove" in out  # preview mentions the would-be removals
+
+
+@pytest.mark.unit
+def test_uninstall_macro_no_fence_no_glm_is_quiet(tmp_path, monkeypatch):
+    """uninstall with nothing to clean is a no-op (idempotent), no crash."""
+    paths = Paths.from_home(tmp_path)
+    paths.zshrc.parent.mkdir(parents=True, exist_ok=True)
+    paths.zshrc.write_text("alias ll='ls -la'\n", encoding="utf-8")
+    _stub_uninstall_monkeypatchables(monkeypatch)
+    paths.moonbridge_yml.parent.mkdir(parents=True, exist_ok=True)
+    paths.moonbridge_yml.write_text("providers: {}\n")
+
+    install.uninstall_macro(paths)  # must not raise
+
+    assert "alias ll='ls -la'" in paths.zshrc.read_text(encoding="utf-8")

@@ -31,6 +31,7 @@ __all__ = [
     "AUTH_TOKEN_LEFT_WARNING",
     "canonical_moonbridge_yml",
     "yml_has_auth_token",
+    "get_api_key",
     "set_api_key",
     "drop_auth_token",
 ]
@@ -100,6 +101,27 @@ def yml_has_auth_token(data) -> bool:
         return False
     server = data.get("server", {})
     return isinstance(server, dict) and "auth_token" in server
+
+
+def get_api_key(data: dict) -> str | None:
+    """Return the Z.ai api_key from a parsed yml tree, or ``None`` if absent.
+
+    The read-side companion to :func:`set_api_key` — the single accessor for
+    the ``providers.<name>.api_key`` location, so callers (glm_script,
+    doctor, future code) don't re-walk the tree. Returns ``None`` for a
+    missing/short tree (does not raise); callers decide whether absence is an
+    error.
+    """
+    if not isinstance(data, dict):
+        return None
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        return None
+    provider = providers.get(ZAI_PROVIDER_NAME)
+    if not isinstance(provider, dict):
+        return None
+    key = provider.get("api_key")
+    return key if isinstance(key, str) and key else None
 
 
 def set_api_key(data: dict, key: str) -> dict:

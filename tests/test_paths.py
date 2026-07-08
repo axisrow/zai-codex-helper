@@ -28,7 +28,7 @@ REAL_HOME = Path(os.environ["HOME"])
 
 @pytest.mark.unit
 def test_from_home_resolves_all_paths_under_injected_home(tmp_path):
-    """SC-1: every one of the 7 fields round-trips under the injected home."""
+    """SC-1: every one of the 8 fields round-trips under the injected home."""
     p = Paths.from_home(tmp_path)
     assert p.codex_dir == tmp_path / ".codex"
     assert p.config_toml == tmp_path / ".codex" / "config.toml"
@@ -37,6 +37,9 @@ def test_from_home_resolves_all_paths_under_injected_home(tmp_path):
     assert p.zshrc == tmp_path / ".zshrc"
     assert p.launchagents_dir == tmp_path / "Library" / "LaunchAgents"
     assert p.backup_dir == tmp_path / ".codex" / ".zai-codex-helper" / "backups"
+    # glm wrapper lives under ~/.local/bin (XDG user bin, NOT ~/.codex — glm
+    # invokes `claude`, unrelated to Codex) — issue #29.
+    assert p.glm_script == tmp_path / ".local" / "bin" / "glm"
 
 
 @pytest.mark.unit

@@ -31,9 +31,14 @@ import sys
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from zai_codex_helper.backends.shell import ShellBackend
 from zai_codex_helper.backends.yaml import YamlBackend
 from zai_codex_helper.errors import ZaiCodexHelperError
+from zai_codex_helper.services.aliases import (
+    apply_aliases as _apply_aliases,
+)
+from zai_codex_helper.services.aliases import (
+    render_alias_body as _render_alias_body,
+)
 from zai_codex_helper.services.diff_preview import compute_diff, preview_yml_change
 from zai_codex_helper.services.io import confirm
 from zai_codex_helper.services.models_cache import (
@@ -59,17 +64,17 @@ __all__ = [
 
 
 #: The shell-helpers block BODY (D-76 step 4). Written verbatim INSIDE the
-#: ShellBackend marker fence. Minimal by design (D-82): two aliases pointing
-#: at the already-installed ``zai-codex-helper`` console script. The Moon
+#: ShellBackend marker fence. Minimal by design (D-82): aliases pointing
+#: at the already-installed ``zai-codex-helper`` console script (plus, since
+#: issue #29, the ``zai`` alias for the original npx helper). The Moon
 #: Bridge binary itself is launched by the Phase 13 LaunchAgent, NOT by
 #: ``.zshrc`` — so this block is a convenience marker / shortcut, never a
-#: launcher. Kept module-level so a future phase (or a doctor check) can
-#: read it as the single source of truth for the fenced body.
-SHELL_HELPERS_BODY = (
-    "# zai-codex-helper shell helpers — managed block (do not edit by hand)\n"
-    'alias codex-zai="zai-codex-helper use zai"\n'
-    'alias codex-openai="zai-codex-helper use openai"'
-)
+#: launcher. Re-exported (module-level) so the ``alias`` subcommand and a
+#: future doctor check read it as the single source of truth for the fence.
+#:
+#: Issue #29: rebuilt from :data:`aliases.ALIASES` (data registry) rather than
+#: a hardcoded literal, so ``setup`` and ``alias apply`` write the same fence.
+SHELL_HELPERS_BODY = _render_alias_body()
 
 #: The valid provider choices (D-76 step 1). ``"zai"`` is the default on
 #: empty / EOF / invalid input.
@@ -297,19 +302,14 @@ def run_setup(
     else:
         shell_consent = confirm_fn("Add shell helpers to .zshrc?")
     if shell_consent:
-        if dry_run:
-            # D-95: preview the would-be .zshrc change as a REAL diff. The
-            # target is the fenced block ShellBackend.write_canonical WOULD
-            # insert — render_fence() is the single source of truth for the
-            # fence shape so the preview matches the real write byte-for-byte.
-            # (.zshrc holds no secret — no redaction needed; only the yml
-            # preview redacts.)
-            target = ShellBackend.render_fence(SHELL_HELPERS_BODY)
-            print_fn(compute_diff(paths.zshrc, target))
-        else:
-            # ShellBackend.write_canonical upserts the marker-fenced block
-            # replace-not-append (D-57) → exactly one fence, idempotent.
-            ShellBackend(paths).write_canonical(SHELL_HELPERS_BODY)
+        # Issue #29: route the shell-helpers write through apply_aliases so
+        # `setup` and `alias apply` share ONE line-granular, non-destructive
+        # path — unknown fence lines (version-skew aliases, comments, exports)
+        # are preserved, not erased. dry_run prints the would-be diff; a real
+        # run writes via the same backend fence.
+        result = _apply_aliases(paths, dry_run=dry_run)
+        if dry_run and result.diff:
+            print_fn(result.diff)
 
     # ------------------------------------------------------------------ #
     # STEP 6 (D-76 step 5) — APPLY THE CHOSEN PROVIDER.

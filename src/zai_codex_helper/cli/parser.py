@@ -39,8 +39,7 @@ from zai_codex_helper.services.provider_apply import (  # noqa: E402, F401
 
 def _handle_use_zai(args: argparse.Namespace) -> int:
     """Make Z.ai (``glm-5.2``, ``xhigh``) the Codex default (D-45, PROV-01)."""
-    # Lazy imports (mirrors `_handle_restore`'s discipline so parser.py stays
-    # import-light at module load).
+    # Lazy imports keep parser.py import-light at module load.
     from zai_codex_helper.services.paths import Paths
     from zai_codex_helper.services.provider_apply import apply_provider
     from zai_codex_helper.services.providers import apply_zai
@@ -269,6 +268,46 @@ def _handle_set_key(args: argparse.Namespace) -> int:
     return set_key(paths, dry_run=getattr(args, "dry_run", False))
 
 
+def _handle_alias_list(args: argparse.Namespace) -> int:
+    """Show managed aliases + whether each is installed in ``.zshrc``."""
+    from zai_codex_helper.services.aliases import list_aliases
+    from zai_codex_helper.services.paths import Paths
+
+    list_aliases(Paths.default())
+    return 0
+
+
+def _render_alias_result(result, dry_run: bool) -> int:
+    """Shared tail for `alias apply`/`remove`: dry-run diff + no-changes note."""
+    if dry_run and result.diff:
+        print(result.diff)
+    if not result.changed:
+        print("no changes")
+    return 0
+
+
+def _handle_alias_apply(args: argparse.Namespace) -> int:
+    """Upsert the managed alias(es) into the ``.zshrc`` fence."""
+    from zai_codex_helper.services.aliases import apply_aliases
+    from zai_codex_helper.services.paths import Paths
+
+    dry_run = getattr(args, "dry_run", False)
+    result = apply_aliases(
+        Paths.default(), names=getattr(args, "names", None), dry_run=dry_run
+    )
+    return _render_alias_result(result, dry_run)
+
+
+def _handle_alias_remove(args: argparse.Namespace) -> int:
+    """Drop the named alias(es) from the ``.zshrc`` fence."""
+    from zai_codex_helper.services.aliases import remove_aliases
+    from zai_codex_helper.services.paths import Paths
+
+    dry_run = getattr(args, "dry_run", False)
+    result = remove_aliases(Paths.default(), names=args.names, dry_run=dry_run)
+    return _render_alias_result(result, dry_run)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the root ``zai-codex-helper`` argparse parser.
 
@@ -398,6 +437,53 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[sub_flags],
     )
     p_setkey.set_defaults(func=_handle_set_key)
+
+    # `alias` — manage shell aliases in the .zshrc marker-fenced block (issue #29).
+    # list = show registry + install state; apply = upsert (default: all);
+    # remove = drop the named alias(es). Same fence `setup` writes.
+    p_alias = subparsers.add_parser(
+        "alias",
+        help="manage shell aliases in ~/.zshrc (zai, codex-zai, codex-openai)",
+        parents=[sub_flags],
+    )
+    alias_sub = p_alias.add_subparsers(
+        dest="alias_action",
+        required=True,
+        metavar="<action>",
+    )
+    p_alias_list = alias_sub.add_parser(
+        "list",
+        help="show managed aliases + whether each is installed",
+        parents=[sub_flags],
+    )
+    p_alias_list.set_defaults(func=_handle_alias_list)
+    p_alias_apply = alias_sub.add_parser(
+        "apply",
+        help="upsert alias(es) into the .zshrc fence (default: all)",
+        parents=[sub_flags],
+    )
+    p_alias_apply.add_argument(
+        "names",
+        nargs="*",
+        help="alias names to sync (default: all managed aliases)",
+    )
+    p_alias_apply.set_defaults(func=_handle_alias_apply)
+    # `add` is the issue-#29 name for the upsert of a named alias (same effect
+    # as `apply <names>`); kept as a distinct verb so the CLI matches the spec.
+    p_alias_add = alias_sub.add_parser(
+        "add",
+        help="add a named alias to the .zshrc fence (like `apply <name>`)",
+        parents=[sub_flags],
+    )
+    p_alias_add.add_argument("names", nargs="+", help="alias name(s) to add")
+    p_alias_add.set_defaults(func=_handle_alias_apply)
+    p_alias_remove = alias_sub.add_parser(
+        "remove",
+        help="drop the named alias(es) from the .zshrc fence",
+        parents=[sub_flags],
+    )
+    p_alias_remove.add_argument("names", nargs="+", help="alias name(s) to remove")
+    p_alias_remove.set_defaults(func=_handle_alias_remove)
 
     # `install-service` / `uninstall-service` (Phase 13, D-83..D-88; SERV-01..04).
     p_install = subparsers.add_parser(

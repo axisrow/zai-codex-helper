@@ -11,6 +11,7 @@ import argparse
 import pytest
 
 from zai_codex_helper.cli import tui
+from zai_codex_helper.services.aliases import AliasResult
 
 
 class _FakeStdin:
@@ -208,13 +209,63 @@ def test_run_arrow_keys_and_quit(monkeypatch):
     monkeypatch.setattr(tui.termios, "tcsetattr", lambda *a, **k: None)
     monkeypatch.setattr(tui.tty, "setcbreak", lambda fd: None)
     monkeypatch.setattr(tui, "_state", lambda paths: (False, False, "OpenAI"))
-    # DOWN×5 → Quit (index 5), ENTER.
-    keys = iter(("DOWN", "DOWN", "DOWN", "DOWN", "DOWN", "\r"))
+    # DOWN×6 → Quit (last index), ENTER.
+    keys = iter(("DOWN", "DOWN", "DOWN", "DOWN", "DOWN", "DOWN", "\r"))
     monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
     monkeypatch.setattr(
         tui, "_dispatch", lambda kind, paths, args, state: kind == "action-quit"
     )
     assert tui.run(_ns()) == 0
+
+
+@pytest.mark.unit
+def test_run_menu_aliases_back_does_not_pause(monkeypatch):
+    """Returning from the Aliases submenu (Back) does NOT trigger 'press any key'.
+
+    The main-loop _pause() after dispatch is for actions that print output
+    (install/uninstall/toggle/set-key/doctor). menu-aliases manages its own
+    pause internally and prints nothing on return, so pausing after it just
+    stalls the UX (the regression: Back showed "press any key").
+    """
+    monkeypatch.setattr(tui.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tui.termios, "tcgetattr", lambda fd: None)
+    monkeypatch.setattr(tui.termios, "tcsetattr", lambda *a, **k: None)
+    monkeypatch.setattr(tui.tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr(tui, "_state", lambda paths: (False, False, "OpenAI"))
+    # _dispatch real for menu-aliases (routes to _aliases_submenu); stub the
+    # submenu to a no-op so we isolate the main-loop pause behavior.
+    monkeypatch.setattr(tui, "_aliases_submenu", lambda paths, args: None)
+    paused = []
+    monkeypatch.setattr(tui, "_pause", lambda: paused.append(True))
+    # DOWN×3 → Aliases (index 3), ENTER (dispatch → submenu no-op → Back),
+    # then "q" to quit the main loop.
+    keys = iter(("DOWN", "DOWN", "DOWN", "\r", "q"))
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    assert tui.run(_ns()) == 0
+    assert paused == []  # Back from Aliases → no pause
+
+
+@pytest.mark.unit
+def test_run_ctrl_c_exits_cleanly(monkeypatch):
+    """Ctrl+C (KeyboardInterrupt during _read_key) → exit 0, no traceback.
+
+    The TUI holds the terminal in cbreak; an unhandled KeyboardInterrupt would
+    dump a traceback AND the finally must still restore termios. The contract:
+    Ctrl+C is a clean quit (like Esc/q), not a crash.
+    """
+    monkeypatch.setattr(tui.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tui.termios, "tcgetattr", lambda fd: None)
+    restored = []
+    monkeypatch.setattr(tui.termios, "tcsetattr", lambda *a, **k: restored.append(True))
+    monkeypatch.setattr(tui.tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr(tui, "_state", lambda paths: (False, False, "OpenAI"))
+
+    def raise_kbi():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(tui, "_read_key", raise_kbi)
+    assert tui.run(_ns()) == 0  # clean exit, not a propagated KeyboardInterrupt
+    assert restored == [True]  # termios restored even on Ctrl+C
 
 
 @pytest.mark.unit
@@ -238,3 +289,173 @@ def test_run_disabled_macro_shows_message_and_pauses(monkeypatch, capsys):
     assert dispatched == []  # disabled → NOT dispatched
     assert paused == [True]
     assert "already" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# Aliases submenu (menu-aliases): dispatch routes to it, and it toggles
+# zai/glm via the existing apply_aliases/remove_aliases service functions.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.unit
+def test_dispatch_menu_aliases_runs_submenu(monkeypatch):
+    """`menu-aliases` invokes the submenu (and signals no-quit)."""
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    called = []
+    monkeypatch.setattr(
+        tui, "_aliases_submenu", lambda paths, args: called.append(True)
+    )
+    rc = tui._dispatch("menu-aliases", argparse.Namespace(), _ns(), (False, False, ""))
+    assert rc is False  # does not quit
+    assert called == [True]
+
+
+@pytest.mark.unit
+def test_aliases_submenu_install_zai_toggles_on(monkeypatch, tmp_path):
+    """Selecting 'Install zai' when absent → apply_aliases(names=['zai'])."""
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    # zai absent (no fence) → selecting it installs.
+    applied = []
+    monkeypatch.setattr(
+        tui,
+        "apply_aliases",
+        lambda p, *, names=None, dry_run=False: (
+            applied.append(names) or AliasResult(changed=True)
+        ),
+    )
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    # DOWN → Install zai (index 0 is first item; submenu lists zai first), ENTER, ESC to leave.
+    keys = iter(("\r", "ESC"))
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())
+    assert applied == [["zai"]]
+
+
+@pytest.mark.unit
+def test_aliases_submenu_successful_toggle_skips_pause(monkeypatch, tmp_path):
+    """A successful alias toggle does NOT pause (no output to read) — redraws at once.
+
+    `_pause` exists for actions that print output the redraw would wipe (Doctor,
+    install/uninstall progress). An alias toggle prints nothing on success, so
+    pausing just stalls the UX. The pause is kept only for the error path.
+    """
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setattr(
+        tui,
+        "apply_aliases",
+        lambda *a, **k: AliasResult(changed=True),
+    )
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
+    paused = []
+    monkeypatch.setattr(tui, "_pause", lambda: paused.append(True))
+    keys = iter(("\r", "ESC"))  # ENTER on zai (absent → install), then leave
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())
+    assert paused == []  # successful toggle → no pause
+
+
+@pytest.mark.unit
+def test_aliases_submenu_install_glm_toggles_on(monkeypatch, tmp_path):
+    """Selecting 'Install glm' routes to apply_aliases(names=['glm']) (→ install_glm)."""
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    applied = []
+    monkeypatch.setattr(
+        tui,
+        "apply_aliases",
+        lambda p, *, names=None, dry_run=False: (
+            applied.append(names) or AliasResult(changed=True)
+        ),
+    )
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    # DOWN once → Install glm (second item), ENTER, ESC.
+    keys = iter(("DOWN", "\r", "ESC"))
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())
+    assert applied == [["glm"]]
+
+
+@pytest.mark.unit
+def test_aliases_submenu_glm_error_does_not_crash(monkeypatch, tmp_path, capsys):
+    """A ZaiCodexHelperError (e.g. glm without yml) is caught — submenu stays up."""
+    from zai_codex_helper.errors import ZaiCodexHelperError
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setattr(
+        tui,
+        "apply_aliases",
+        lambda *a, **k: (_ for _ in ()).throw(ZaiCodexHelperError("no yml key")),
+    )
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    # DOWN → glm, ENTER (raises, caught), ESC.
+    keys = iter(("DOWN", "\r", "ESC"))
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())  # must not raise
+    assert "error:" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_aliases_submenu_shows_not_installed_and_install_hint(
+    monkeypatch, tmp_path, capsys
+):
+    """Absent alias renders '[not installed]' and the footer says 'Enter to install'."""
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setattr(
+        "zai_codex_helper.services.aliases.is_alias_installed", lambda p, name: False
+    )
+    monkeypatch.setattr(tui, "apply_aliases", lambda *a, **k: AliasResult(changed=True))
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    keys = iter(("\r", "ESC"))  # ENTER on zai (absent) → install, then leave
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())
+    out = capsys.readouterr().out
+    assert "[not installed]" in out
+    assert "Enter to install" in out
+
+
+@pytest.mark.unit
+def test_aliases_submenu_shows_installed_and_uninstall_hint(
+    monkeypatch, tmp_path, capsys
+):
+    """Installed alias renders '[installed]' and the footer says 'Enter to uninstall'."""
+    from zai_codex_helper.services.paths import Paths
+
+    paths = Paths.from_home(tmp_path)
+    monkeypatch.setattr(
+        "zai_codex_helper.services.aliases.is_alias_installed", lambda p, name: True
+    )
+    monkeypatch.setattr(
+        tui, "apply_aliases", lambda *a, **k: AliasResult(changed=False)
+    )
+    monkeypatch.setattr(
+        tui, "remove_aliases", lambda *a, **k: AliasResult(changed=True)
+    )
+    monkeypatch.setattr(tui, "_pause", lambda: None)
+    keys = iter(("\r", "ESC"))  # ENTER on zai (installed) → uninstall, then leave
+    monkeypatch.setattr(tui, "_read_key", lambda: next(keys))
+    tui._aliases_submenu(paths, _ns())
+    out = capsys.readouterr().out
+    assert "[installed]" in out
+    assert "Enter to uninstall" in out

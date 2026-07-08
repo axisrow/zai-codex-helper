@@ -29,6 +29,7 @@ import termios
 import tty
 
 from zai_codex_helper.errors import ZaiCodexHelperError
+from zai_codex_helper.services.aliases import apply_aliases, remove_aliases
 from zai_codex_helper.services.paths import Paths
 
 #: The fixed menu skeleton (top to bottom). Each entry is (key, kind) where
@@ -39,6 +40,7 @@ _MENU: tuple[tuple[str, str], ...] = (
     ("Install", "macro-install"),
     ("Z.ai", "toggle-zai"),
     ("Set Key", "action-setkey"),
+    ("Aliases", "menu-aliases"),
     ("Doctor", "action-doctor"),
     ("Uninstall", "macro-uninstall"),
     ("Quit", "action-quit"),
@@ -153,6 +155,97 @@ def _is_disabled(kind: str, state: tuple[bool, bool, str]) -> bool:
     return False
 
 
+#: The Aliases submenu items: (label, alias-name). ``None`` alias-name = Back.
+#: Labels are bare names (no "Install" verb) — the verb lives in the contextual
+#: footer hint (Enter to install / Enter to uninstall). zai is a fence alias;
+#: glm is a generated script — both flow through the same
+#: apply_aliases/remove_aliases service functions (glm routes internally).
+_ALIASES_SUBMENU: tuple[tuple[str, str | None], ...] = (
+    ("zai", "zai"),
+    ("glm", "glm"),
+    ("Back", None),
+)
+
+
+def _aliases_submenu(paths, args: argparse.Namespace) -> None:
+    """Arrow-key submenu for the opt-in aliases (zai, glm). Returns to main menu.
+
+    Three items: zai, glm, Back. Each alias shows live state — ``[installed]``
+    or ``[not installed]`` (strict: glm is "ours" iff the script carries the
+    helper marker; a foreign ~/.local/bin/glm is "not installed"). The footer
+    hint is contextual on the selected item: ``Enter to install`` when not
+    installed, ``Enter to uninstall`` when installed, ``Enter to go back`` on
+    Back.
+    Selecting an alias TOGGLES it (install via :func:`apply_aliases` if absent,
+    remove via :func:`remove_aliases` if present — both route ``glm`` to the
+    script service). Esc / Back returns to the main menu. cbreak is already
+    active (the main loop holds it for the whole session), so
+    :func:`_read_key` works here too.
+
+    Presence is computed once per redraw (a snapshot over both aliases) rather
+    than per row + per footer hint — each check reads the fence / parses the
+    yml, and the loop redraws on every keystroke.
+
+    ``ZaiCodexHelperError`` (e.g. ``glm`` without the yml/key) is caught and
+    printed — the submenu stays up, mirroring how the main loop handles its
+    own action errors.
+    """
+    from zai_codex_helper.services.aliases import is_alias_installed
+
+    dry = getattr(args, "dry_run", False)
+    sel = 0
+    while True:
+        # Snapshot each alias's installed-state once per redraw (each check is
+        # a fence read / yml parse — don't repeat per row + per footer hint).
+        installed = {
+            name: is_alias_installed(paths, name)
+            for _, name in _ALIASES_SUBMENU
+            if name is not None
+        }
+        print(_CLEAR, end="")
+        print("zai-codex-helper   Aliases\n")
+        for i, (label, name) in enumerate(_ALIASES_SUBMENU):
+            if name is None:
+                rendered = label
+            else:
+                state = "installed" if installed[name] else "not installed"
+                rendered = f"{label}  [{state}]"
+            marker = ">" if i == sel else " "
+            print(f"  {marker} {rendered}")
+        # Contextual footer hint on the selected row.
+        _, sel_name = _ALIASES_SUBMENU[sel]
+        if sel_name is None:
+            action = "go back"
+        elif installed[sel_name]:
+            action = "uninstall"
+        else:
+            action = "install"
+        print(f"\n  ↑↓ move   Enter to {action}   Esc back")
+
+        key = _read_key()
+        if key in ("UP", "k"):
+            sel = (sel - 1) % len(_ALIASES_SUBMENU)
+        elif key in ("DOWN", "j"):
+            sel = (sel + 1) % len(_ALIASES_SUBMENU)
+        elif key in ("\r", "\n"):
+            _, name = _ALIASES_SUBMENU[sel]
+            if name is None:
+                return  # Back
+            try:
+                if installed[name]:
+                    remove_aliases(paths, names=[name], dry_run=dry)
+                else:
+                    apply_aliases(paths, names=[name], dry_run=dry)
+            except ZaiCodexHelperError as e:
+                # Pause only on the error path — the redraw _CLEAR would wipe
+                # the message. A successful toggle prints nothing, so it
+                # redraws at once (no "press any key" stall).
+                print(f"error: {e}", file=sys.stderr)
+                _pause()
+        elif key in ("ESC", "q"):
+            return
+
+
 def _dispatch(
     kind: str, paths, args: argparse.Namespace, state: tuple[bool, bool, str]
 ) -> bool:
@@ -171,6 +264,9 @@ def _dispatch(
     dry = getattr(args, "dry_run", False)
     if kind == "action-quit":
         return True
+    if kind == "menu-aliases":
+        _aliases_submenu(paths, args)
+        return False
     if kind == "macro-install":
         import os
 
@@ -283,9 +379,18 @@ def run(args: argparse.Namespace) -> int:
                 # don't, so skip the launchctl+config re-read for them.
                 if kind in ("macro-install", "macro-uninstall", "toggle-zai"):
                     state = _state(paths)
-                _pause()
+                # Pause only for actions that print output the redraw would wipe
+                # (install/uninstall/toggle/set-key/doctor). menu-aliases manages
+                # its own pause internally and prints nothing on return — no
+                # "press any key" stall on Back.
+                if kind != "menu-aliases":
+                    _pause()
             elif key in ("ESC", "q"):
                 return 0
+    except KeyboardInterrupt:
+        # Ctrl+C during _read_key — a clean quit, not a crash. The `finally`
+        # below still restores termios so the shell isn't left in cbreak.
+        return 0
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
